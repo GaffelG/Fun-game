@@ -1,51 +1,83 @@
 // Text-to-speech queue. Never speaks two things at once.
 // High-priority messages jump ahead of lower ones; low-priority chatter is dropped if the queue backs up.
+//
+// Two voice roles: "main" (announcer: shop, purchases, results) and "battle" (play-by-play commentary).
+// iPhone loads its voice list late and often never fires `voiceschanged`, so we poll for it
+// and notify the UI whenever the list changes.
 
 export type Priority = 'high' | 'normal' | 'low';
-interface Item { text: string; priority: Priority }
+export type Role = 'main' | 'battle';
+interface Item { text: string; priority: Priority; role: Role }
 
 type Listener = (speaking: boolean) => void;
 
 const RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
+const NOVELTY = ['bells', 'bubbles', 'whisper', 'zarvox', 'trinoids', 'bad news', 'good news', 'jester', 'organ', 'cellos', 'boing', 'albert', 'fred', 'hysterical', 'superstar', 'wobble', 'junior', 'kathy', 'ralph', 'grandma', 'grandpa', 'rocko', 'shelley', 'eddy', 'flo', 'reed', 'sandy'];
+
+export interface VoiceOption { id: string; label: string; voice: SpeechSynthesisVoice; fun: boolean }
 
 class Speaker {
   private queue: Item[] = [];
   private speaking = false;
-  private voice: SpeechSynthesisVoice | null = null;
+  private chosen: Record<Role, VoiceOption | null> = { main: null, battle: null };
   private listeners: Listener[] = [];
+  private voiceListeners: (() => void)[] = [];
   private watchdog: number | undefined;
   /** id of the utterance currently playing; stale callbacks are ignored */
   private current = 0;
   rate = Number(store('ttsRate')) || 1.05;
-  /** English voices, best first */
-  voices: SpeechSynthesisVoice[] = [];
+  /** English voices: best-sounding first, fun/novelty voices last */
+  voices: VoiceOption[] = [];
   lastSpoken = '';
   readonly supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   constructor() {
     if (!this.supported) return;
-    const pick = () => {
-      this.voices = rankVoices(speechSynthesis.getVoices());
-      const saved = store('ttsVoice');
-      this.voice = this.voices.find((v) => v.name === saved) ?? this.voices[0] ?? null;
-    };
-    pick();
-    speechSynthesis.addEventListener?.('voiceschanged', pick);
+    this.loadVoices();
+    speechSynthesis.addEventListener?.('voiceschanged', () => this.loadVoices());
+    // Poll: iOS often fills the list a few seconds late without an event.
+    let tries = 0;
+    const poll = window.setInterval(() => {
+      this.loadVoices();
+      if (++tries > 40) window.clearInterval(poll);
+    }, 250);
   }
 
-  get voiceName() { return this.voice?.name ?? 'default'; }
-
-  setVoice(name: string) {
-    const v = this.voices.find((x) => x.name === name);
-    if (v) { this.voice = v; store('ttsVoice', v.name); }
+  private loadVoices() {
+    const list = buildOptions(speechSynthesis.getVoices());
+    if (list.length === this.voices.length && list.every((v, i) => v.id === this.voices[i].id)) return;
+    this.voices = list;
+    for (const role of ['main', 'battle'] as Role[]) {
+      const saved = store(`ttsVoice_${role}`);
+      this.chosen[role] = list.find((v) => v.id === saved) ?? null;
+    }
+    // Defaults: best voice for the announcer, a different good voice for battle commentary.
+    if (!this.chosen.main) this.chosen.main = list[0] ?? null;
+    if (!this.chosen.battle) this.chosen.battle = list.find((v) => !v.fun && v.id !== this.chosen.main?.id) ?? this.chosen.main;
+    this.voiceListeners.forEach((l) => l());
   }
 
-  /** Cycle to the next English voice. Returns its name. */
-  nextVoice(): string {
-    if (!this.voices.length) return this.voiceName;
-    const i = this.voices.findIndex((v) => v === this.voice);
-    this.setVoice(this.voices[(i + 1) % this.voices.length].name);
-    return this.voiceName;
+  onVoicesChanged(l: () => void) { this.voiceListeners.push(l); return () => { this.voiceListeners = this.voiceListeners.filter((x) => x !== l); }; }
+
+  voiceId(role: Role = 'main') { return this.chosen[role]?.id ?? ''; }
+  voiceLabel(role: Role = 'main') { return this.chosen[role]?.label ?? 'iPhone default voice'; }
+  /** Kept for older callers */
+  get voiceName() { return this.voiceLabel('main'); }
+
+  setVoice(id: string, role: Role = 'main') {
+    const v = this.voices.find((x) => x.id === id);
+    if (!v) return;
+    this.chosen[role] = v;
+    store(`ttsVoice_${role}`, v.id);
+    this.voiceListeners.forEach((l) => l());
+  }
+
+  /** Cycle to the next voice for a role. Returns its label. */
+  nextVoice(role: Role = 'main'): string {
+    if (!this.voices.length) { this.loadVoices(); if (!this.voices.length) return this.voiceLabel(role); }
+    const i = this.voices.findIndex((v) => v.id === this.voiceId(role));
+    this.setVoice(this.voices[(i + 1) % this.voices.length].id, role);
+    return this.voiceLabel(role);
   }
 
   setRate(r: number) {
@@ -63,21 +95,25 @@ class Speaker {
     const u = new SpeechSynthesisUtterance(' ');
     u.volume = 0;
     speechSynthesis.speak(u);
-    if (!this.voice) {
-      this.voices = rankVoices(speechSynthesis.getVoices());
-      this.voice = this.voices.find((v) => v.name === store('ttsVoice')) ?? this.voices[0] ?? null;
-    }
+    this.loadVoices();
   }
 
-  say(text: string, priority: Priority = 'normal') {
+  say(text: string, priority: Priority = 'normal', role: Role = 'main') {
     if (!this.supported || !text) return;
     // Drop low-priority chatter when busy
     if (priority === 'low' && (this.speaking || this.queue.length > 0)) return;
     if (priority === 'normal') this.queue = this.queue.filter((q) => q.priority !== 'low');
     const idx = this.queue.findIndex((q) => RANK[q.priority] > RANK[priority]);
-    if (idx < 0) this.queue.push({ text, priority });
-    else this.queue.splice(idx, 0, { text, priority });
+    const item = { text, priority, role };
+    if (idx < 0) this.queue.push(item);
+    else this.queue.splice(idx, 0, item);
     this.next();
+  }
+
+  /** Speak a sample right away in the given voice (used by the voice picker). */
+  preview(role: Role) {
+    this.stop();
+    this.say(role === 'main' ? `Hi, I'm ${this.voiceLabel(role)}. You bought Ninja.` : `Hi, I'm ${this.voiceLabel(role)}. First blood! Their Knight falls.`, 'high', role);
   }
 
   /** Stop talking and clear everything queued. */
@@ -102,9 +138,12 @@ class Speaker {
     this.lastSpoken = item.text;
     this.emit();
     const u = new SpeechSynthesisUtterance(item.text);
+    const opt = this.chosen[item.role] ?? this.chosen.main;
+    // iOS ignores the voice unless lang matches it, so set both.
     u.lang = 'en-US';
+    // If the browser rejects the voice for any reason, keep talking with the default voice.
+    if (opt) { try { u.voice = opt.voice; u.lang = opt.voice.lang; } catch { /* default voice */ } }
     u.rate = this.rate;
-    if (this.voice) u.voice = this.voice;
     const id = ++this.current;
     const done = () => {
       if (id !== this.current) return; // stale or repeated callback
@@ -124,21 +163,32 @@ function store(k: string, v?: string): string | null {
   try { if (v !== undefined) localStorage.setItem(k, v); return localStorage.getItem(k); } catch { return null; }
 }
 
-function rankVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
-  const en = voices.filter((v) => v.lang.startsWith('en'));
+const ACCENT: Record<string, string> = { 'en-US': 'American', 'en-GB': 'British', 'en-AU': 'Australian', 'en-IE': 'Irish', 'en-IN': 'Indian', 'en-ZA': 'South African', 'en-NZ': 'New Zealand', 'en-SC': 'Scottish', 'en-CA': 'Canadian' };
+
+function buildOptions(voices: SpeechSynthesisVoice[]): VoiceOption[] {
+  const en = voices.filter((v) => v.lang.replace('_', '-').toLowerCase().startsWith('en'));
   const score = (v: SpeechSynthesisVoice) => {
     const n = v.name.toLowerCase();
     let s = 0;
     if (n.includes('premium')) s += 6;
     if (n.includes('enhanced')) s += 5;
     if (n.includes('neural') || n.includes('natural')) s += 5;
-    if (['samantha', 'ava', 'zoe', 'evan', 'nathan', 'google us english'].some((k) => n.includes(k))) s += 3;
-    if (v.lang === 'en-US') s += 2;
+    if (['samantha', 'ava', 'zoe', 'evan', 'nathan', 'daniel', 'karen', 'moira', 'google'].some((k) => n.includes(k))) s += 3;
+    if (v.lang === 'en-US') s += 1;
     if (v.localService) s += 1;
-    if (['novelty', 'bells', 'bubbles', 'whisper', 'zarvox', 'trinoids', 'bad news', 'good news', 'jester', 'organ', 'cellos', 'boing', 'albert', 'fred', 'hysterical', 'superstar', 'wobble'].some((k) => n.includes(k))) s -= 20;
     return s;
   };
-  return [...en].filter((v) => score(v) > -10).sort((a, b) => score(b) - score(a));
+  const seen = new Set<string>();
+  return en
+    .map((v) => {
+      const fun = NOVELTY.some((k) => v.name.toLowerCase().includes(k));
+      const lang = v.lang.replace('_', '-');
+      const accent = ACCENT[lang] ?? lang;
+      return { id: v.voiceURI || `${v.name}|${v.lang}`, label: `${v.name} (${accent}${fun ? ', fun' : ''})`, voice: v, fun, s: score(v) };
+    })
+    .filter((o) => (seen.has(o.id) ? false : (seen.add(o.id), true)))
+    .sort((a, b) => Number(a.fun) - Number(b.fun) || b.s - a.s || a.label.localeCompare(b.label))
+    .map(({ s: _s, ...o }) => o);
 }
 
 export const speaker = new Speaker();

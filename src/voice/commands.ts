@@ -37,7 +37,7 @@ export type Command =
   | { type: 'xpInfo' }
   | { type: 'standings' }
   | { type: 'buyAll'; name: string }
-  | { type: 'voice'; change: 'next' | 'faster' | 'slower' | 'which' }
+  | { type: 'voice'; change: 'next' | 'faster' | 'slower' | 'which'; role?: 'main' | 'battle' }
   | { type: 'timeLeft' }
   | { type: 'advice' }
   | { type: 'undo' }
@@ -175,7 +175,8 @@ export function parseCommand(raw: string): Command | null {
   if (/\b(how much|my|current) (xp|exp|experience)\b|\bnext level\b|\bhow far\b/.test(t)) return { type: 'xpInfo' };
   if (/\b(standings|scoreboard|leaderboard|everyone|all opponents|opponents health)\b/.test(t)) return { type: 'standings' };
   if (/\b(time left|how long|seconds left|how much time)\b/.test(t)) return { type: 'timeLeft' };
-  if (/\b(next|change|different|other|switch) voice\b/.test(t)) return { type: 'voice', change: 'next' };
+  if (/\b(next|change|different|other|switch|new)( the)? (battle|commentator|commentary) voice\b/.test(t)) return { type: 'voice', change: 'next', role: 'battle' };
+  if (/\b(next|change|different|other|switch|new)( the)? voice\b/.test(t)) return { type: 'voice', change: 'next' };
   if (/\b(speak|talk|read) faster\b|\bfaster\b/.test(t)) return { type: 'voice', change: 'faster' };
   if (/\b(speak|talk|read) slower\b|\bslower\b|\bslow down\b/.test(t)) return { type: 'voice', change: 'slower' };
   if (/\b(which|what) voice\b/.test(t)) return { type: 'voice', change: 'which' };
@@ -255,5 +256,5 @@ export const HELP_TEXT =
   'Ask what should I do for advice. Lock shop keeps the shop for next round. ' +
   'More questions: how many units can I have, what is on my bench, my synergies, what can I afford, what can I upgrade, how much XP, standings, time left. ' +
   'Fill board puts bench units on empty spots. Buy all knights buys every copy in the shop. ' +
-  'Voice: next voice, faster, slower. ' +
+  'Voice: next voice, next battle voice, faster, slower. ' +
   'Settings: minimal, balanced or detailed announcements, start timer, stop timer, and new game.';
