@@ -49,34 +49,41 @@ export interface UnitDef {
   armor: number;
   range: number; // 1 = melee
   magic: boolean; // basic attacks deal magic damage
-  ability: { name: string; description: string; mana: number; power: number; kind: 'nuke' | 'aoe' | 'heal' | 'shield' | 'stun' };
+  ability: { name: string; description: string; mana: number; power: number; kind: 'nuke' | 'aoe' | 'heal' | 'shield' | 'stun';
+    /** deals physical damage (armor applies) instead of magic */
+    physical?: boolean;
+    /** stun duration in seconds for 'stun' abilities */
+    stunSeconds?: number;
+    /** caster also gains a shield of this size */
+    selfShield?: number;
+  };
 }
 
 export const UNITS: UnitDef[] = [
   { id: 'squire', name: 'Squire', cost: 1, traits: ['Warrior', 'Storm'], hp: 600, attack: 50, attackSpeed: 0.7, armor: 25, range: 1, magic: false,
-    ability: { name: 'Shield Bash', description: 'Stuns the target for one second.', mana: 60, power: 80, kind: 'stun' } },
+    ability: { name: 'Shield Bash', description: 'Stuns the target for one second.', mana: 60, power: 80, kind: 'stun', stunSeconds: 1 } },
   { id: 'ember', name: 'Ember Mage', cost: 1, traits: ['Mage', 'Fire'], hp: 450, attack: 40, attackSpeed: 0.6, armor: 10, range: 3, magic: true,
     ability: { name: 'Fireball', description: 'Hurls a fireball for heavy magic damage.', mana: 50, power: 200, kind: 'nuke' } },
   { id: 'scout', name: 'Frost Scout', cost: 1, traits: ['Ranger', 'Frost'], hp: 480, attack: 55, attackSpeed: 0.75, armor: 15, range: 3, magic: false,
-    ability: { name: 'Ice Arrow', description: 'Fires an arrow that deals bonus damage.', mana: 60, power: 150, kind: 'nuke' } },
+    ability: { name: 'Ice Arrow', description: 'Fires an arrow that deals bonus physical damage.', mana: 60, power: 150, kind: 'nuke', physical: true } },
   { id: 'stonewall', name: 'Stonewall', cost: 1, traits: ['Guardian'], hp: 750, attack: 40, attackSpeed: 0.55, armor: 40, range: 1, magic: false,
     ability: { name: 'Fortify', description: 'Gains a large shield.', mana: 70, power: 250, kind: 'shield' } },
   { id: 'knife', name: 'Shadow Knife', cost: 2, traits: ['Assassin', 'Storm'], hp: 500, attack: 70, attackSpeed: 0.85, armor: 15, range: 1, magic: false,
-    ability: { name: 'Backstab', description: 'Strikes for massive physical damage.', mana: 50, power: 250, kind: 'nuke' } },
+    ability: { name: 'Backstab', description: 'Strikes for massive physical damage.', mana: 50, power: 250, kind: 'nuke', physical: true } },
   { id: 'frostguard', name: 'Frost Guard', cost: 2, traits: ['Guardian', 'Frost'], hp: 800, attack: 45, attackSpeed: 0.6, armor: 45, range: 1, magic: false,
-    ability: { name: 'Frozen Wall', description: 'Stuns the target and shields itself.', mana: 80, power: 120, kind: 'stun' } },
+    ability: { name: 'Frozen Wall', description: 'Stuns the target for one and a half seconds and shields itself.', mana: 80, power: 120, kind: 'stun', stunSeconds: 1.5, selfShield: 200 } },
   { id: 'pyro', name: 'Pyromancer', cost: 2, traits: ['Mage', 'Fire'], hp: 520, attack: 45, attackSpeed: 0.65, armor: 15, range: 3, magic: true,
     ability: { name: 'Flame Wave', description: 'Burns all enemies for magic damage.', mana: 80, power: 120, kind: 'aoe' } },
   { id: 'berserker', name: 'Berserker', cost: 3, traits: ['Warrior', 'Fire'], hp: 800, attack: 75, attackSpeed: 0.8, armor: 30, range: 1, magic: false,
-    ability: { name: 'Rampage', description: 'Cleaves all nearby enemies.', mana: 70, power: 150, kind: 'aoe' } },
+    ability: { name: 'Rampage', description: 'Cleaves all enemies for physical damage.', mana: 70, power: 150, kind: 'aoe', physical: true } },
   { id: 'storm', name: 'Storm Archer', cost: 3, traits: ['Ranger', 'Storm'], hp: 600, attack: 75, attackSpeed: 0.85, armor: 20, range: 4, magic: false,
     ability: { name: 'Chain Lightning', description: 'Lightning hits every enemy.', mana: 80, power: 130, kind: 'aoe' } },
   { id: 'cleric', name: 'Frost Cleric', cost: 3, traits: ['Mage', 'Frost'], hp: 620, attack: 40, attackSpeed: 0.6, armor: 20, range: 3, magic: true,
     ability: { name: 'Healing Snow', description: 'Heals the weakest ally.', mana: 70, power: 300, kind: 'heal' } },
   { id: 'warlord', name: 'Warlord', cost: 4, traits: ['Warrior', 'Guardian'], hp: 1100, attack: 85, attackSpeed: 0.75, armor: 50, range: 1, magic: false,
-    ability: { name: 'War Cry', description: 'Shields itself and stuns its target.', mana: 90, power: 200, kind: 'stun' } },
+    ability: { name: 'War Cry', description: 'Shields itself and stuns its target for two seconds.', mana: 90, power: 200, kind: 'stun', stunSeconds: 2, selfShield: 300 } },
   { id: 'phantom', name: 'Phantom', cost: 4, traits: ['Assassin', 'Frost'], hp: 750, attack: 100, attackSpeed: 0.9, armor: 25, range: 1, magic: false,
-    ability: { name: 'Death Mark', description: 'Executes the target for huge damage.', mana: 60, power: 450, kind: 'nuke' } },
+    ability: { name: 'Death Mark', description: 'Executes the target for huge physical damage.', mana: 60, power: 450, kind: 'nuke', physical: true } },
   { id: 'archmage', name: 'Archmage', cost: 5, traits: ['Mage', 'Storm'], hp: 900, attack: 60, attackSpeed: 0.7, armor: 30, range: 4, magic: true,
     ability: { name: 'Meteor Storm', description: 'Rains meteors on all enemies.', mana: 100, power: 350, kind: 'aoe' } },
   { id: 'dragon', name: 'Fire Dragon', cost: 5, traits: ['Warrior', 'Fire'], hp: 1500, attack: 110, attackSpeed: 0.75, armor: 50, range: 2, magic: true,
