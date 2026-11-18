@@ -37,11 +37,14 @@ export default function App() {
   // ---------- Battle ----------
   const battleTimers = useRef<number[]>([]);
   const countdown = useRef(PREP_SECONDS);
+  /** Set by "quiet": skip the rest of this battle's play-by-play. */
+  const narrationMuted = useRef(false);
   const runBattle = useCallback(() => {
     const game = gameRef.current;
     if (game.phase !== 'prep') return;
     if (game.board.length === 0) { say({ text: 'You have no units on the board. Buy some first.', priority: 'high' }); return; }
     const { result, opponentName } = game.startBattle();
+    narrationMuted.current = false;
     const v = verbosityRef.current;
     if (v !== 'minimal') say({ text: `Battle against ${opponentName} begins.`, priority: 'normal' });
     rerender();
@@ -50,7 +53,7 @@ export default function App() {
     for (const e of result.events) {
       if (v === 'minimal') continue;
       if (v === 'balanced' && !e.important) continue;
-      battleTimers.current.push(window.setTimeout(() => say({ text: e.text, priority: 'low' }), e.t * scale * 1000));
+      battleTimers.current.push(window.setTimeout(() => { if (!narrationMuted.current) say({ text: e.text, priority: 'low' }); }, e.t * scale * 1000));
     }
     battleTimers.current.push(window.setTimeout(() => {
       const out = gameRef.current.finishBattle();
@@ -98,7 +101,7 @@ export default function App() {
       case 'fight': return runBattle();
       case 'lastBattle': return say({ text: game.lastBattleSummary || 'No battles yet.', priority: 'high' });
       case 'repeat': speaker.say(speaker.lastSpoken || 'Nothing to repeat.', 'high'); return;
-      case 'quiet': speaker.stop(); return;
+      case 'quiet': narrationMuted.current = true; speaker.stop(); return;
       case 'help': return say({ text: HELP_TEXT, priority: 'high' });
       case 'verbosity':
         setVerbosity(cmd.level); localStorageSet('verbosity', cmd.level);
@@ -108,6 +111,7 @@ export default function App() {
         return say({ text: cmd.on ? `Round timer on. Battles start automatically after ${PREP_SECONDS} seconds.` : 'Round timer off. Say fight when you are ready.', priority: 'high' });
       case 'newGame':
         battleTimers.current.forEach(clearTimeout); battleTimers.current = [];
+        speaker.stop(); // drop any old battle narration
         gameRef.current = new Game();
         countdown.current = PREP_SECONDS; setSecondsLeft(PREP_SECONDS);
         say({ text: 'New game started.', priority: 'high' });
@@ -163,12 +167,13 @@ export default function App() {
   const start = () => {
     speaker.unlock(); // must happen inside the tap
     requestWakeLock(setWakeLock);
+    // Start the listener first so the announcements below pause it instead of being heard by it.
+    listener.start(speaker.isSpeaking);
     if (!started) {
       setStarted(true);
       say({ text: listener.supported ? 'Voice control on. Say help at any time.' : 'Speech recognition is not available in this browser. Use the text box.', priority: 'high' });
       say(gameRef.current.describeShop('Round one. '));
     }
-    listener.start();
   };
 
   const submitTyped = (e: React.FormEvent) => {

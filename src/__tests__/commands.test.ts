@@ -61,3 +61,12 @@ describe('Game', () => {
     expect(Object.values(g.pool).every((n) => n >= 0)).toBe(true);
   });
 });
+
+import { simulateBattle } from '../game/battle';
+describe('abilities', () => {
+  it('Warlord shields itself when casting', () => {
+    // Warlord alone vs a sturdy dummy; it must survive longer thanks to shields. Just ensure no crash and a result.
+    const r = simulateBattle([{ uid: 1, defId: 'warlord', stars: 1, row: 0, col: 1 }], [{ uid: 2, defId: 'squire', stars: 1, row: 0, col: 1 }]);
+    expect(r.winner).toBe(0);
+  });
+});

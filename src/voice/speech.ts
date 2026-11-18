@@ -14,6 +14,8 @@ class Speaker {
   private voice: SpeechSynthesisVoice | null = null;
   private listeners: Listener[] = [];
   private watchdog: number | undefined;
+  /** id of the utterance currently playing; stale callbacks are ignored */
+  private current = 0;
   rate = 1.05;
   lastSpoken = '';
   readonly supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
@@ -54,6 +56,7 @@ class Speaker {
   /** Stop talking and clear everything queued. */
   stop() {
     this.queue = [];
+    this.current++; // invalidate callbacks of the cancelled utterance
     if (this.supported) speechSynthesis.cancel();
     this.finish();
   }
@@ -75,7 +78,13 @@ class Speaker {
     u.lang = 'en-US';
     u.rate = this.rate;
     if (this.voice) u.voice = this.voice;
-    const done = () => { this.finish(); window.setTimeout(() => this.next(), 150); };
+    const id = ++this.current;
+    const done = () => {
+      if (id !== this.current) return; // stale or repeated callback
+      this.current++;
+      this.finish();
+      window.setTimeout(() => this.next(), 150);
+    };
     u.onend = done;
     u.onerror = done;
     // iOS sometimes never fires onend. Watchdog based on text length.

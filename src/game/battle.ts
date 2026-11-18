@@ -140,9 +140,11 @@ export function simulateBattle(playerUnits: BoardUnit[], enemyUnits: BoardUnit[]
         f.mana = 0;
         const ab = UNIT_BY_ID[f.defId].ability;
         const power = ab.power * f.abilityPower * f.dmgMult;
-        if (ab.kind === 'nuke') { dealDamage(target, power, true); hit = true; }
-        else if (ab.kind === 'aoe') { enemies.forEach((e) => dealDamage(e, power, true)); hit = true; }
-        else if (ab.kind === 'stun') { dealDamage(target, power, true); target.stunned = 1.5; hit = true; }
+        const magic = !ab.physical;
+        if (ab.kind === 'nuke') { dealDamage(target, power, magic); hit = true; }
+        else if (ab.kind === 'aoe') { enemies.forEach((e) => dealDamage(e, power, magic)); hit = true; }
+        else if (ab.kind === 'stun') { dealDamage(target, power, magic); target.stunned = ab.stunSeconds ?? 1; hit = true; }
+        if (ab.selfShield) f.shield += ab.selfShield * f.abilityPower;
         else if (ab.kind === 'shield') f.shield += power;
         else if (ab.kind === 'heal') {
           const ally = alive(f.side).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
