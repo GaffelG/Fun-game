@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseCommand } from '../voice/commands';
+import { parseBest, parseCommand } from '../voice/commands';
 import { Game } from '../game/engine';
 import { UNITS } from '../game/config';
 
@@ -105,7 +105,7 @@ describe('smart features', () => {
   });
   it('undo refunds a purchase', () => {
     const g = new Game();
-    g.shop = ['knight', 'spark', 'archer', 'rock', 'ninja'];
+    g.shop = ['knight', 'lava', 'archer', 'rock', 'ninja'];
     const before = g.gold;
     g.buy(1);
     expect(g.undo().text).toContain('Undone');
@@ -116,9 +116,9 @@ describe('smart features', () => {
   it('shop hints upgrades and advice suggests it', () => {
     const g = new Game();
     g.gold = 20;
-    g.shop = ['knight', 'knight', 'spark', null, null];
+    g.shop = ['knight', 'knight', 'lava', null, null];
     g.buy(1); g.buy(2);
-    g.shop = ['spark', 'knight', null, null, null];
+    g.shop = ['lava', 'knight', null, null, null];
     expect(g.describeShop().text).toContain('Upgrades your unit');
     expect(g.advice().text).toContain('slot two');
   });
@@ -146,5 +146,41 @@ describe('unit names', () => {
   });
   it('does not match names inside other words', () => {
     expect(parseCommand('place my mage in b2')).toEqual({ type: 'place', name: 'mage', row: 1, col: 1 });
+  });
+});
+
+describe('hard-to-hear commands', () => {
+  const cases: [string, unknown][] = [
+    ['place ninja on a3', { type: 'place', name: 'Ninja', row: 0, col: 2 }],
+    ['play ninja on a3', { type: 'place', name: 'Ninja', row: 0, col: 2 }],
+    ['plays ninja a3', { type: 'place', name: 'Ninja', row: 0, col: 2 }],
+    ['please ninja to a three', { type: 'place', name: 'Ninja', row: 0, col: 2 }],
+    ['ninja a3', { type: 'place', name: 'Ninja', row: 0, col: 2 }],
+    ['ninja 83', { type: 'place', name: 'Ninja', row: 0, col: 2 }],
+    ['ninja to eight three', { type: 'place', name: 'Ninja', row: 0, col: 2 }],
+    ['knight bee too', { type: 'place', name: 'Knight', row: 1, col: 1 }],
+    ['knight v2', { type: 'place', name: 'Knight', row: 1, col: 1 }],
+    ['yeti see four', { type: 'place', name: 'Yeti', row: 2, col: 3 }],
+    ['ninja front', { type: 'place', name: 'Ninja', row: 0, col: null }],
+    ['move the archer to the back', { type: 'place', name: 'Archer', row: 2, col: null }],
+    ['ninja front 2', { type: 'place', name: 'Ninja', row: 0, col: 1 }],
+    ['ninja', { type: 'nameOnly', name: 'Ninja' }],
+    ['the ninja please', { type: 'nameOnly', name: 'Ninja' }],
+    ['buy ninja', { type: 'buyName', name: 'Ninja' }],
+    ['lava', { type: 'nameOnly', name: 'Lava' }],
+    ['larva', { type: 'nameOnly', name: 'Lava' }],
+    ['ninjas', { type: 'nameOnly', name: 'Ninja' }],
+    ['phonix', { type: 'nameOnly', name: 'Phoenix' }],
+    ['shamen b1', { type: 'place', name: 'Shaman', row: 1, col: 0 }],
+    ['sell my ninja', { type: 'sell', name: 'Ninja' }],
+    ['what does the ninja do', { type: 'unitInfo', name: 'Ninja' }],
+    ['bench my knight', { type: 'bench', name: 'Knight' }],
+    ['play again', { type: 'newGame' }],
+    ['fight', { type: 'fight' }],
+    ['scout opponent', { type: 'scout' }],
+  ];
+  for (const [input, expected] of cases) it(input, () => expect(parseCommand(input)).toEqual(expected));
+  it('prefers the more specific alternative', () => {
+    expect(parseBest(['ninja', 'ninja a3'])).toEqual({ type: 'place', name: 'Ninja', row: 0, col: 2 });
   });
 });

@@ -4,7 +4,7 @@ import { BOARD_COLS, BOARD_ROWS, PREP_SECONDS, TRAITS, UNIT_BY_ID, UNITS } from 
 import { activeTraits } from './game/battle';
 import { speaker } from './voice/speech';
 import { Listener, MicState } from './voice/recognition';
-import { Command, HELP_TEXT, parseCommand } from './voice/commands';
+import { Command, HELP_TEXT, parseBest } from './voice/commands';
 
 type Verbosity = 'minimal' | 'balanced' | 'detailed';
 
@@ -83,7 +83,23 @@ export default function App() {
       case 'refresh': return say(game.refresh());
       case 'buyXp': return say(game.buyXp());
       case 'levelUp': return say(game.levelUp());
-      case 'place': return say(game.place(cmd.name, cmd.row, cmd.col));
+      case 'place': {
+        const owned = game.findOwned(cmd.name, true);
+        const col = cmd.col ?? game.freeColInRow(cmd.row, owned?.uid);
+        return say(game.place(cmd.name, cmd.row, col));
+      }
+      case 'nameOnly': {
+        // Probably "buy <name>" with "buy" not heard. Buy it if it's in the shop; otherwise describe it.
+        const slot = game.shopSlotOf(cmd.name);
+        if (slot >= 0 && game.phase === 'prep') return say(game.buy(slot + 1));
+        const u = UNITS.find((x) => x.name === cmd.name)!;
+        const owned = game.findOwned(cmd.name);
+        if (owned) {
+          const b = game.board.find((x) => x.uid === owned.uid);
+          return say({ text: `${cmd.name} is ${b ? `on your board in ${cellName(b.row, b.col)}` : 'on your bench'}. It is not in the shop. To move it, say ${cmd.name} and a square, like ${cmd.name} B2.`, priority: 'high' });
+        }
+        return say({ text: `${cmd.name} is not in the shop right now. ${game.describeUnit(u.id).text}`, priority: 'high' });
+      }
       case 'bench': return say(game.bench_(cmd.name));
       case 'sell': return say(game.sell(cmd.name));
       case 'team': return say(game.describeTeam());
@@ -143,10 +159,8 @@ export default function App() {
 
   const handlePhrase = useCallback((alts: string[]) => {
     addLog('you', alts[0]);
-    for (const a of alts) {
-      const cmd = parseCommand(a);
-      if (cmd) { execute(cmd); return; }
-    }
+    const cmd = parseBest(alts);
+    if (cmd) { execute(cmd); return; }
     // Ignore long phrases (probably conversation around you); respond to short unknown ones.
     if (alts[0].split(' ').length <= 7) say({ text: `I heard "${alts[0]}", but I don't know that command. Say help for options.`, priority: 'normal' });
   }, [execute, say]);
