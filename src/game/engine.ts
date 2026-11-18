@@ -30,6 +30,11 @@ export class Game {
   lastBattle: BattleResult | null = null;
   lastBattleSummary = '';
   private nextUid = 1;
+  private lastPurchase: { uid: number; slot: number; defId: string; gold: number } | null = null;
+  shopLocked = false;
+  shopWasKept = false;
+  stats = { wins: 0, losses: 0, upgrades: 0, startedAt: Date.now() };
+  private announcedOut = new Set<string>();
 
   constructor() {
     this.rollShop();
@@ -73,11 +78,26 @@ export class Game {
     const parts = this.shop.map((id, i) => {
       if (!id) return `Slot ${ordinal(i + 1)}: empty.`;
       const d = C.UNIT_BY_ID[id];
-      const owned = this.countCopies(id);
-      const ownText = owned ? ` You own ${ordinal(owned)}.` : '';
-      return `Slot ${ordinal(i + 1)}: ${d.name}, ${d.cost} gold.${ownText}`;
+      return `Slot ${ordinal(i + 1)}: ${d.name}, ${d.cost} gold.${this.shopHint(id)}`;
     });
-    return { text: `${prefix}${parts.join(' ')} You have ${this.gold} gold.`, priority: 'high' };
+    const lock = this.shopLocked ? ' The shop is locked.' : '';
+    return { text: `${prefix}${parts.join(' ')} You have ${this.gold} gold.${lock}`, priority: 'high' };
+  }
+
+  /** Short spoken hint about why a shop unit matters to you. */
+  shopHint(id: string): string {
+    const ones = [...this.board, ...this.bench].filter((u) => u && u.defId === id && u.stars === 1).length;
+    const inShop = this.shop.filter((s) => s === id).length;
+    if (ones >= 2) return ' Upgrades your unit!';
+    if (ones === 1 && inShop >= 2) return ' Buy both to upgrade!';
+    if (ones === 1) return ' Makes a pair.';
+    const counts = new Map(activeTraits(this.board).map((t) => [t.trait, t.count]));
+    for (const t of C.UNIT_BY_ID[id].traits) {
+      const c = counts.get(t) ?? 0;
+      const th = C.TRAITS.find((x) => x.name === t)!.thresholds.find((x) => x > c);
+      if (c > 0 && th === c + 1) return ` Activates ${t}.`;
+    }
+    return '';
   }
 
   describeSlot(slot: number): Say {
@@ -121,16 +141,19 @@ export class Game {
     this.gold -= d.cost;
     this.shop[slot - 1] = null;
     const unit: OwnedUnit = { uid: this.nextUid++, defId: id, stars: 1 };
+    // Remember the purchase so a misheard "buy" can be undone (only if it didn't trigger an upgrade).
+    this.lastPurchase = wouldCombine ? null : { uid: unit.uid, slot: slot - 1, defId: id, gold: d.cost };
     const out: Say[] = [];
     // Auto-place on the board if there is room, otherwise bench
     const placedCell = this.board.length < this.maxUnits && !wouldCombine ? this.firstFreeCell(d.range > 1) : null;
     if (placedCell) {
       this.board.push({ ...unit, row: placedCell[0], col: placedCell[1] });
-      out.push({ text: `You bought ${d.name}. Placed in ${cellName(placedCell[0], placedCell[1])}. ${this.gold} gold left.`, priority: 'high' });
+      out.push({ text: `You bought ${d.name}. Placed in ${cellName(placedCell[0], placedCell[1])}. ${this.board.length} of ${this.maxUnits} units on the board. ${this.gold} gold left.`, priority: 'high' });
     } else {
       if (benchIdx >= 0) this.bench[benchIdx] = unit;
       else this.bench.push(unit); // temporary, removed by combine
-      out.push({ text: `You bought ${d.name}. ${this.gold} gold left.`, priority: 'high' });
+      const why = wouldCombine ? '' : ` Board is full, ${this.maxUnits} of ${this.maxUnits}, so it went to the bench.`;
+      out.push({ text: `You bought ${d.name}.${why} ${this.gold} gold left.`, priority: 'high' });
     }
     out.push(...this.combine());
     this.bench = this.bench.slice(0, C.BENCH_SIZE);
@@ -171,6 +194,7 @@ export class Game {
           if (onBoard) onBoard.stars = stars + 1;
           const benchOne = this.bench.find((b) => b && b.uid === keeper.uid);
           if (benchOne) benchOne.stars = stars + 1;
+          this.stats.upgrades++;
           out.push({ text: `Your ${C.UNIT_BY_ID[id].name} has been upgraded to ${STAR_WORD[stars + 1]}!`, priority: 'high' });
           changed = true;
         }
@@ -225,7 +249,7 @@ export class Game {
     return null;
   }
 
-  /** Find a unit by name or trait, e.g. "mage" or "ember mage". Prefers bench units when `preferBench`. */
+  /** Find a unit by name or trait, e.g. "mage" or "ninja". Prefers bench units when `preferBench`. */
   findOwned(query: string, preferBench = false): OwnedUnit | null {
     const q = query.toLowerCase().trim();
     const all: OwnedUnit[] = preferBench
@@ -290,9 +314,159 @@ export class Game {
     return { text: `On your board, ${this.board.length} of ${this.maxUnits}: ${boardText}.${benchText}${traitText}`, priority: 'high' };
   }
 
+  describeUnitLimit(): Say {
+    const next = this.level < C.MAX_LEVEL ? ` Level ${this.level + 1} allows ${C.UNITS_PER_LEVEL[this.level + 1]}, and you need ${this.xpNeeded - this.xp} more XP.` : '';
+    const free = this.maxUnits - this.board.length;
+    const benchCount = this.bench.filter(Boolean).length;
+    return { text: `At level ${this.level} you can field ${this.maxUnits} units. You have ${this.board.length} on the board${free > 0 ? `, so ${free} ${free === 1 ? 'spot is' : 'spots are'} free` : ', so the board is full'}. ${benchCount} on the bench.${next}`, priority: 'high' };
+  }
+
+  describeBench(): Say {
+    const units = this.bench.filter(Boolean) as OwnedUnit[];
+    if (!units.length) return { text: 'Your bench is empty.', priority: 'high' };
+    return { text: `On your bench, ${units.length} of ${C.BENCH_SIZE}: ${units.map((u) => `${C.UNIT_BY_ID[u.defId].name}${u.stars > 1 ? ` ${STAR_WORD[u.stars]}` : ''}`).join(', ')}.`, priority: 'high' };
+  }
+
+  describeSynergies(): Say {
+    const traits = activeTraits(this.board);
+    if (!traits.length) return { text: 'No units on the board, so no synergies.', priority: 'high' };
+    const parts = traits.sort((a, b) => b.count - a.count).map((t) => {
+      const def = C.TRAITS.find((d) => d.name === t.trait)!;
+      const next = def.thresholds.find((th) => th > t.count);
+      const state = t.tier > 0 ? 'active' : 'not active';
+      return `${t.count} ${t.trait}, ${state}${next ? `, ${next - t.count} more for the next bonus` : ''}`;
+    });
+    return { text: `Synergies: ${parts.join('. ')}.`, priority: 'high' };
+  }
+
+  describeAffordable(): Say {
+    const slots = this.shop.map((id, i) => ({ id, i })).filter((x) => x.id && C.UNIT_BY_ID[x.id].cost <= this.gold);
+    if (!slots.length) return { text: `With ${this.gold} gold you can't afford anything in the shop.`, priority: 'high' };
+    return { text: `With ${this.gold} gold you can afford: ${slots.map((x) => `slot ${ordinal(x.i + 1)}, ${C.UNIT_BY_ID[x.id!].name}`).join('; ')}.`, priority: 'high' };
+  }
+
+  describeUpgrades(): Say {
+    const counts: Record<string, number> = {};
+    for (const u of [...this.board, ...this.bench]) if (u) { const k = `${u.defId}|${u.stars}`; counts[k] = (counts[k] ?? 0) + 1; }
+    const close = Object.entries(counts).filter(([k, n]) => n === 2 && !k.endsWith('|3'));
+    if (!close.length) return { text: 'You have no pairs yet. Three copies of a unit combine into a stronger one.', priority: 'high' };
+    const parts = close.map(([k]) => {
+      const [id, stars] = k.split('|');
+      const inShop = this.shop.findIndex((s) => s === id);
+      return `two ${C.UNIT_BY_ID[id].name}${stars === '2' ? ' two stars' : 's'}${inShop >= 0 && stars === '1' ? `, and one is in slot ${ordinal(inShop + 1)}` : ''}`;
+    });
+    return { text: `One more copy upgrades: ${parts.join('; ')}.`, priority: 'high' };
+  }
+
+  describeXp(): Say {
+    if (this.level >= C.MAX_LEVEL) return { text: 'You are at max level.', priority: 'high' };
+    const need = this.xpNeeded - this.xp;
+    return { text: `Level ${this.level}, ${this.xp} of ${this.xpNeeded} XP. ${need} more XP to level ${this.level + 1}, which costs ${Math.ceil(need / C.XP_BUY_AMOUNT) * C.XP_BUY_COST} gold.`, priority: 'high' };
+  }
+
+  describeStandings(): Say {
+    const list = [...this.opponents].sort((a, b) => b.hp - a.hp).map((o) => (o.hp > 0 ? `${o.name} ${o.hp}` : `${o.name} eliminated`));
+    return { text: `You have ${this.hp} health. ${list.join(', ')}.`, priority: 'high' };
+  }
+
+  /** Move bench units onto empty board spots until the board is full. */
+  fillBoard(): Say {
+    if (this.phase !== 'prep') return this.notInPrep();
+    const placed: string[] = [];
+    const bench = (this.bench.filter(Boolean) as OwnedUnit[]).sort((a, b) => b.stars - a.stars || C.UNIT_BY_ID[b.defId].cost - C.UNIT_BY_ID[a.defId].cost);
+    for (const u of bench) {
+      if (this.board.length >= this.maxUnits) break;
+      const cell = this.firstFreeCell(C.UNIT_BY_ID[u.defId].range > 1);
+      if (!cell) break;
+      this.bench = this.bench.map((b) => (b && b.uid === u.uid ? null : b));
+      this.board.push({ ...u, row: cell[0], col: cell[1] });
+      placed.push(`${C.UNIT_BY_ID[u.defId].name} in ${cellName(cell[0], cell[1])}`);
+    }
+    if (!placed.length) return { text: this.board.length >= this.maxUnits ? `Your board is already full with ${this.maxUnits} units.` : 'Your bench is empty.', priority: 'high' };
+    return { text: `Placed ${placed.join(', ')}. ${this.board.length} of ${this.maxUnits} units on the board.`, priority: 'high' };
+  }
+
+  buyAll(query: string): Say[] {
+    const q = query.toLowerCase();
+    const slots = this.shop.map((id, i) => ({ id, i })).filter((x) => x.id && (C.UNIT_BY_ID[x.id].name.toLowerCase() === q || C.UNIT_BY_ID[x.id].traits.some((t) => t.toLowerCase() === q)));
+    if (!slots.length) return [{ text: `There is no ${query} in the shop.`, priority: 'high' }];
+    return slots.flatMap((x) => this.buy(x.i + 1));
+  }
+
+  undo(): Say {
+    if (this.phase !== 'prep') return this.notInPrep();
+    const p = this.lastPurchase;
+    if (!p) return { text: 'There is no purchase to undo.', priority: 'high' };
+    const exists = [...this.board, ...this.bench].some((u) => u && u.uid === p.uid);
+    if (!exists || this.shop[p.slot] !== null) { this.lastPurchase = null; return { text: 'That purchase can no longer be undone.', priority: 'high' }; }
+    this.board = this.board.filter((u) => u.uid !== p.uid);
+    this.bench = this.bench.map((u) => (u && u.uid === p.uid ? null : u));
+    this.shop[p.slot] = p.defId;
+    this.gold += p.gold;
+    this.lastPurchase = null;
+    return { text: `Undone. ${C.UNIT_BY_ID[p.defId].name} is back in slot ${ordinal(p.slot + 1)}, and you have ${this.gold} gold.`, priority: 'high' };
+  }
+
+  setLock(locked: boolean): Say {
+    this.shopLocked = locked;
+    return { text: locked ? 'Shop locked. It will stay the same next round.' : 'Shop unlocked.', priority: 'high' };
+  }
+
+  summary(): string {
+    const mins = Math.max(1, Math.round((Date.now() - this.stats.startedAt) / 60000));
+    const best = [...this.board].sort((a, b) => b.stars * 10 + C.UNIT_BY_ID[b.defId].cost - (a.stars * 10 + C.UNIT_BY_ID[a.defId].cost))[0];
+    const bestText = best ? ` Your strongest unit was ${C.UNIT_BY_ID[best.defId].name} with ${STAR_WORD[best.stars]}.` : '';
+    return `You won ${this.stats.wins} battles and lost ${this.stats.losses}, made ${this.stats.upgrades} upgrades, and played for ${mins} minutes.${bestText}`;
+  }
+
+  /** Coach: the single most useful thing to do right now. */
+  advice(): Say {
+    const tips: string[] = [];
+    if (this.phase !== 'prep') return { text: 'Wait for the battle to finish.', priority: 'high' };
+    const benchUnits = this.bench.filter(Boolean) as OwnedUnit[];
+    // 1. Upgrades in the shop
+    this.shop.forEach((id, i) => {
+      if (!id || tips.length) return;
+      const hint = this.shopHint(id);
+      if (hint.includes('pgrade') && this.gold >= C.UNIT_BY_ID[id].cost) tips.push(`Buy slot ${ordinal(i + 1)}, ${C.UNIT_BY_ID[id].name}.${hint}`);
+    });
+    // 2. Empty board spots
+    if (!tips.length && this.board.length < this.maxUnits) {
+      if (benchUnits.length) tips.push(`You have ${this.maxUnits - this.board.length} empty board spots. Say fill the board.`);
+      else {
+        const affordable = this.shop.map((id, i) => ({ id, i })).filter((x) => x.id && C.UNIT_BY_ID[x.id].cost <= this.gold);
+        if (affordable.length) {
+          const pick = affordable.find((x) => this.shopHint(x.id!)) ?? affordable.sort((a, b) => C.UNIT_BY_ID[b.id!].cost - C.UNIT_BY_ID[a.id!].cost)[0];
+          tips.push(`Your board has an empty spot. Buy slot ${ordinal(pick.i + 1)}, ${C.UNIT_BY_ID[pick.id!].name}.${this.shopHint(pick.id!)}`);
+        }
+      }
+    }
+    // 3. Synergy one away
+    if (!tips.length) {
+      const pick = this.shop.map((id, i) => ({ id, i })).find((x) => x.id && this.shopHint(x.id).includes('Activates') && C.UNIT_BY_ID[x.id].cost <= this.gold);
+      if (pick) tips.push(`Buy slot ${ordinal(pick.i + 1)}, ${C.UNIT_BY_ID[pick.id!].name}.${this.shopHint(pick.id!)}`);
+    }
+    // 4. Bench full of singles
+    if (!tips.length && benchUnits.length >= C.BENCH_SIZE - 1) {
+      const junk = benchUnits.find((u) => u.stars === 1 && this.countCopies(u.defId) === 1);
+      if (junk) tips.push(`Your bench is almost full. Consider selling ${C.UNIT_BY_ID[junk.defId].name}.`);
+    }
+    // 5. Economy / level
+    if (!tips.length) {
+      const lowHp = this.hp <= 40;
+      const need = this.xpNeeded - this.xp;
+      const levelCost = Math.ceil(need / C.XP_BUY_AMOUNT) * C.XP_BUY_COST;
+      if (this.level < C.MAX_LEVEL && (lowHp || this.gold - levelCost >= 20) && this.gold >= levelCost) tips.push(`Level up for ${levelCost} gold to field ${C.UNITS_PER_LEVEL[this.level + 1]} units.`);
+      else if (lowHp && this.gold >= C.REFRESH_COST + 2) tips.push('Your health is low. Spend gold: refresh the shop and look for upgrades.');
+      else if (this.gold < 50) tips.push(`Save your gold. Every 10 gold earns 1 extra per round, up to ${C.MAX_INTEREST}. Say fight when ready.`);
+      else tips.push('You have lots of gold. Refresh the shop to find upgrades, or level up.');
+    }
+    return { text: tips[0], priority: 'high' };
+  }
+
   describeStatus(): Say {
     return {
-      text: `Round ${this.round}. You have ${this.gold} gold, ${this.hp} health, level ${this.level} with ${this.xp} of ${this.xpNeeded} XP.`,
+      text: `Round ${this.round}. You have ${this.gold} gold, ${this.hp} health, level ${this.level} with ${this.xp} of ${this.xpNeeded} XP. ${this.board.length} of ${this.maxUnits} units on the board.`,
       priority: 'high',
     };
   }
@@ -325,11 +499,13 @@ export class Game {
       const dmg = 2 + survivorsDmg(0) + Math.floor(this.round / 3);
       op.hp = Math.max(0, op.hp - dmg);
       this.streak = this.streak > 0 ? this.streak + 1 : 1;
+      this.stats.wins++;
       out.push({ text: `Victory! You dealt ${dmg} damage to ${op.name}.${op.hp === 0 ? ` ${op.name} has been eliminated!` : ''}`, priority: 'high' });
     } else if (r.winner === 1) {
       const dmg = 2 + survivorsDmg(1) + Math.floor(this.round / 3);
       this.hp = Math.max(0, this.hp - dmg);
       this.streak = this.streak < 0 ? this.streak - 1 : -1;
+      this.stats.losses++;
       out.push({ text: `Defeat. You lost ${dmg} health. ${this.hp} health remaining.`, priority: 'high' });
     } else {
       this.hp = Math.max(0, this.hp - 2);
@@ -338,16 +514,24 @@ export class Game {
     this.lastBattleSummary = out[0].text;
 
     // AI opponents also take some damage from each other off-screen
-    for (const o of this.opponents) if (o !== op && o.hp > 0 && Math.random() < 0.5) o.hp = Math.max(0, o.hp - (2 + Math.floor(Math.random() * (this.round / 2 + 3))));
+    // The other AI opponents fight each other: pair them up, each loser takes damage.
+    const others = this.opponents.filter((o) => o !== op && o.hp > 0).sort(() => Math.random() - 0.5);
+    for (let i = 0; i + 1 < others.length; i += 2) {
+      const loser = Math.random() < 0.5 ? others[i] : others[i + 1];
+      loser.hp = Math.max(0, loser.hp - Math.round(C.AI.fightDamageBase + this.round * C.AI.fightDamagePerRound + Math.random() * 4));
+    }
+    const newlyOut = this.opponents.filter((o) => o !== op && o.hp === 0 && !this.announcedOut.has(o.name));
+    for (const o of newlyOut) { this.announcedOut.add(o.name); out.push({ text: `${o.name} has been eliminated by another opponent.`, priority: 'normal' }); }
 
     if (this.hp <= 0) {
       this.phase = 'gameover';
-      out.push({ text: `You have been eliminated in round ${this.round}. Game over. Say new game to play again.`, priority: 'high' });
+      const place = this.opponents.filter((o) => o.hp > 0).length + 1;
+      out.push({ text: `You have been eliminated in round ${this.round}, finishing in ${place === 2 ? 'second' : place === 3 ? 'third' : place === 4 ? 'fourth' : 'fifth'} place. ${this.summary()} Say new game to play again.`, priority: 'high' });
       return out;
     }
     if (this.opponents.every((o) => o.hp <= 0)) {
       this.phase = 'gameover';
-      out.push({ text: `All opponents defeated. You win the game! Say new game to play again.`, priority: 'high' });
+      out.push({ text: `All opponents defeated. You win the game! ${this.summary()} Say new game to play again.`, priority: 'high' });
       return out;
     }
 
@@ -360,9 +544,14 @@ export class Game {
     this.round++;
     const leveled = this.level < C.MAX_LEVEL ? this.addXp(C.XP_PER_ROUND) : null;
     this.phase = 'prep';
-    this.rollShop();
+    this.lastPurchase = null;
+    this.shopWasKept = this.shopLocked;
+    if (this.shopLocked) this.shopLocked = false; // a lock holds for one round
+    else this.rollShop();
     this.prepareOpponent();
-    out.push({ text: `Round ${this.round}. You earned ${income} gold and now have ${this.gold}.`, priority: 'normal' });
+    const nextInterest = Math.floor(this.gold / 10) + 1;
+    const tip = nextInterest <= C.MAX_INTEREST && this.gold % 10 >= 7 ? ` Save ${nextInterest * 10 - this.gold} more for extra interest.` : '';
+    out.push({ text: `Round ${this.round}. You earned ${income} gold and now have ${this.gold}.${tip}`, priority: 'normal' });
     if (leveled) out.push(leveled);
     return out;
   }

@@ -1,4 +1,4 @@
-import { Trait, UNITS, UNITS_PER_LEVEL, UnitDef } from './config';
+import { AI, SHOP_ODDS, Trait, UNITS, UNITS_PER_LEVEL, UnitDef } from './config';
 import { BoardUnit, activeTraits } from './battle';
 
 export interface Strategy {
@@ -38,19 +38,29 @@ export function createOpponents(count: number): Opponent[] {
 
 /** Build a fresh AI board for the given round. Stronger as the game goes on. */
 export function buildOpponentBoard(op: Opponent, round: number): BoardUnit[] {
-  const level = Math.min(9, 1 + Math.floor(round * 0.6));
+  const level = Math.min(9, 1 + Math.floor(round * AI.levelPerRound));
   const size = UNITS_PER_LEVEL[level];
-  const maxCost = Math.min(5, 1 + Math.floor(round / 3));
-  const pool = UNITS.filter((u) => u.cost <= maxCost);
-  const score = (u: UnitDef) =>
-    u.traits.filter((t) => op.strategy.favored.includes(t)).length * 3 + u.cost + Math.random() * 2;
-  const picks = [...pool].sort((a, b) => score(b) - score(a)).slice(0, size);
-  // Fill remaining slots if pool is small
-  while (picks.length < size) picks.push(pool[Math.floor(Math.random() * pool.length)]);
+  // Only use cost tiers that a player of this level would commonly see in the shop.
+  const commonCost = SHOP_ODDS[level].reduce((m, pct, i) => (pct >= AI.minShopOdds ? i + 1 : m), 1);
+  const maxCost = Math.min(commonCost, 1 + Math.floor(round / AI.costTierEvery));
+  // Draw units like a player would: each pick rolls a cost tier using the shop odds for this level,
+  // then prefers units matching the strategy's favored traits. No duplicates (stars model copies).
+  const odds = SHOP_ODDS[level].slice(0, maxCost);
+  const total = odds.reduce((a, b) => a + b, 0);
+  const picks: UnitDef[] = [];
+  for (let tries = 0; picks.length < size && tries < 50; tries++) {
+    let r = Math.random() * total, cost = 1;
+    for (let i = 0; i < odds.length; i++) { r -= odds[i]; if (r < 0) { cost = i + 1; break; } }
+    const options = UNITS.filter((u) => u.cost === cost && !picks.includes(u));
+    if (!options.length) continue;
+    const weight = (u: UnitDef) => 1 + u.traits.filter((t) => op.strategy.favored.includes(t)).length * 3;
+    let w = Math.random() * options.reduce((a, u) => a + weight(u), 0);
+    picks.push(options.find((u) => (w -= weight(u)) < 0) ?? options[0]);
+  }
 
   const starBonus = op.strategy.id === 'synergy' ? 0.15 : 0;
-  const twoStarChance = Math.min(0.8, round * 0.06 + starBonus);
-  const threeStarChance = Math.max(0, (round - 12) * 0.04);
+  const twoStarChance = Math.min(AI.twoStarMax, round * AI.twoStarPerRound + starBonus);
+  const threeStarChance = Math.max(0, (round - AI.threeStarFromRound) * AI.threeStarPerRound);
 
   const isTank = (u: UnitDef) => u.traits.includes('Guardian') || u.traits.includes('Warrior') || u.traits.includes('Assassin');
   const front = picks.filter(isTank);

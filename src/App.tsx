@@ -20,8 +20,10 @@ export default function App() {
   const [secondsLeft, setSecondsLeft] = useState(PREP_SECONDS);
   const [typed, setTyped] = useState('');
   const [wakeLock, setWakeLock] = useState<'on' | 'off' | 'unsupported'>('off');
+  const timerOnRef = useRef(false);
   const verbosityRef = useRef(verbosity);
   verbosityRef.current = verbosity;
+  timerOnRef.current = timerOn;
   const g = gameRef.current;
 
   const addLog = (who: 'you' | 'game', text: string) => setLog((l) => [{ who, text }, ...l].slice(0, 30));
@@ -60,7 +62,7 @@ export default function App() {
       say(out);
       if (gameRef.current.phase === 'prep') {
         if (verbosityRef.current !== 'minimal') say({ ...gameRef.current.scout(), text: `Next up: ${gameRef.current.scout().text}`, priority: 'normal' });
-        say(gameRef.current.describeShop('New shop. '));
+        say(gameRef.current.describeShop(gameRef.current.shopWasKept ? 'Your locked shop: ' : 'New shop. '));
       }
       countdown.current = PREP_SECONDS; setSecondsLeft(PREP_SECONDS);
     }, result.duration * scale * 1000 + 800));
@@ -109,6 +111,26 @@ export default function App() {
       case 'timer':
         setTimerOn(cmd.on); countdown.current = PREP_SECONDS; setSecondsLeft(PREP_SECONDS);
         return say({ text: cmd.on ? `Round timer on. Battles start automatically after ${PREP_SECONDS} seconds.` : 'Round timer off. Say fight when you are ready.', priority: 'high' });
+      case 'advice': return say(game.advice());
+      case 'undo': return say(game.undo());
+      case 'lock': rerender(); return say(game.setLock(cmd.on));
+      case 'unitLimit': return say(game.describeUnitLimit());
+      case 'benchInfo': return say(game.describeBench());
+      case 'synergies': return say(game.describeSynergies());
+      case 'afford': return say(game.describeAffordable());
+      case 'upgrades': return say(game.describeUpgrades());
+      case 'fillBoard': return say(game.fillBoard());
+      case 'xpInfo': return say(game.describeXp());
+      case 'standings': return say(game.describeStandings());
+      case 'buyAll': return say(game.buyAll(cmd.name));
+      case 'timeLeft':
+        return say({ text: timerOnRef.current ? `${countdown.current} seconds until battle.` : 'The round timer is off. Say fight when you are ready, or start timer.', priority: 'high' });
+      case 'voice': {
+        if (cmd.change === 'next') { const n = speaker.nextVoice(); rerender(); return say({ text: `This is ${n}. Say next voice to try another.`, priority: 'high' }); }
+        if (cmd.change === 'faster') { speaker.setRate(speaker.rate + 0.1); rerender(); return say({ text: 'Speaking faster.', priority: 'high' }); }
+        if (cmd.change === 'slower') { speaker.setRate(speaker.rate - 0.1); rerender(); return say({ text: 'Speaking slower.', priority: 'high' }); }
+        return say({ text: `The voice is ${speaker.voiceName}, at speed ${speaker.rate}.`, priority: 'high' });
+      }
       case 'newGame':
         battleTimers.current.forEach(clearTimeout); battleTimers.current = [];
         speaker.stop(); // drop any old battle narration
@@ -227,6 +249,9 @@ export default function App() {
           <button onClick={() => execute({ type: 'refresh' })}>Refresh (2)</button>
           <button onClick={() => execute({ type: 'buyXp' })}>Buy XP (4)</button>
           <button onClick={() => execute({ type: 'fight' })} disabled={g.phase !== 'prep'}>Fight{timerOn ? ` (${secondsLeft}s)` : ''}</button>
+          <button onClick={() => execute({ type: 'advice' })}>Coach</button>
+          <button onClick={() => execute({ type: 'undo' })}>Undo</button>
+          <button className={g.shopLocked ? 'active' : ''} onClick={() => execute({ type: 'lock', on: !g.shopLocked })}>{g.shopLocked ? 'Locked' : 'Lock'}</button>
         </div>
       </section>
 
@@ -262,6 +287,17 @@ export default function App() {
             <button key={v} className={v === verbosity ? 'active' : ''} onClick={() => execute({ type: 'verbosity', level: v })}>{v}</button>
           ))}
           <button className={timerOn ? 'active' : ''} onClick={() => execute({ type: 'timer', on: !timerOn })}>Round timer {timerOn ? 'on' : 'off'}</button>
+        </div>
+        <div className="voice-settings">
+          <label>Voice
+            <select value={speaker.voiceName} onChange={(e) => { speaker.setVoice(e.target.value); rerender(); speaker.say(`Hi, I'm ${e.target.value}. You bought Ninja.`, 'high'); }}>
+              {speaker.voices.map((v) => <option key={v.name + v.lang} value={v.name}>{v.name} ({v.lang})</option>)}
+            </select>
+          </label>
+          <label>Speed {speaker.rate.toFixed(2)}
+            <input type="range" min={0.7} max={1.6} step={0.05} value={speaker.rate} onChange={(e) => { speaker.setRate(Number(e.target.value)); rerender(); }} />
+          </label>
+          <p className="hint">For a much better voice: iPhone Settings → Accessibility → Spoken Content → Voices → English. Download an <b>Enhanced</b> or <b>Premium</b> voice (for example Ava, Zoe or Evan), then reload this page and pick it here.</p>
         </div>
       </section>
 
