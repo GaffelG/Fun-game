@@ -70,3 +70,27 @@ describe('abilities', () => {
     expect(r.winner).toBe(0);
   });
 });
+
+describe('new commands', () => {
+  const cases: [string, unknown][] = [
+    ['4', { type: 'buy', slot: 4 }],
+    ['44', { type: 'buy', slot: 4 }],
+    ['four', { type: 'buy', slot: 4 }],
+    ['by for', { type: 'buy', slot: 4 }],
+    ['buy 4', { type: 'buy', slot: 4 }],
+    ['How many units can I have?', { type: 'unitLimit' }],
+    ["What's on my bench", { type: 'benchInfo' }],
+    ['what are my synergies', { type: 'synergies' }],
+    ['what can I afford', { type: 'afford' }],
+    ['what can I upgrade', { type: 'upgrades' }],
+    ['fill the board', { type: 'fillBoard' }],
+    ['how much XP do I have', { type: 'xpInfo' }],
+    ['standings', { type: 'standings' }],
+    ['buy all squires', { type: 'buyAll', name: 'Squire' }],
+    ['next voice', { type: 'voice', change: 'next' }],
+    ['speak slower', { type: 'voice', change: 'slower' }],
+    ['how much time left', { type: 'timeLeft' }],
+    ['place my mage in B2', { type: 'place', name: 'mage', row: 1, col: 1 }],
+  ];
+  for (const [input, expected] of cases) it(input, () => expect(parseCommand(input)).toEqual(expected));
+});

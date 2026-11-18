@@ -126,11 +126,12 @@ export class Game {
     const placedCell = this.board.length < this.maxUnits && !wouldCombine ? this.firstFreeCell(d.range > 1) : null;
     if (placedCell) {
       this.board.push({ ...unit, row: placedCell[0], col: placedCell[1] });
-      out.push({ text: `You bought ${d.name}. Placed in ${cellName(placedCell[0], placedCell[1])}. ${this.gold} gold left.`, priority: 'high' });
+      out.push({ text: `You bought ${d.name}. Placed in ${cellName(placedCell[0], placedCell[1])}. ${this.board.length} of ${this.maxUnits} units on the board. ${this.gold} gold left.`, priority: 'high' });
     } else {
       if (benchIdx >= 0) this.bench[benchIdx] = unit;
       else this.bench.push(unit); // temporary, removed by combine
-      out.push({ text: `You bought ${d.name}. ${this.gold} gold left.`, priority: 'high' });
+      const why = wouldCombine ? '' : ` Board is full, ${this.maxUnits} of ${this.maxUnits}, so it went to the bench.`;
+      out.push({ text: `You bought ${d.name}.${why} ${this.gold} gold left.`, priority: 'high' });
     }
     out.push(...this.combine());
     this.bench = this.bench.slice(0, C.BENCH_SIZE);
@@ -290,9 +291,88 @@ export class Game {
     return { text: `On your board, ${this.board.length} of ${this.maxUnits}: ${boardText}.${benchText}${traitText}`, priority: 'high' };
   }
 
+  describeUnitLimit(): Say {
+    const next = this.level < C.MAX_LEVEL ? ` Level ${this.level + 1} allows ${C.UNITS_PER_LEVEL[this.level + 1]}, and you need ${this.xpNeeded - this.xp} more XP.` : '';
+    const free = this.maxUnits - this.board.length;
+    const benchCount = this.bench.filter(Boolean).length;
+    return { text: `At level ${this.level} you can field ${this.maxUnits} units. You have ${this.board.length} on the board${free > 0 ? `, so ${free} ${free === 1 ? 'spot is' : 'spots are'} free` : ', so the board is full'}. ${benchCount} on the bench.${next}`, priority: 'high' };
+  }
+
+  describeBench(): Say {
+    const units = this.bench.filter(Boolean) as OwnedUnit[];
+    if (!units.length) return { text: 'Your bench is empty.', priority: 'high' };
+    return { text: `On your bench, ${units.length} of ${C.BENCH_SIZE}: ${units.map((u) => `${C.UNIT_BY_ID[u.defId].name}${u.stars > 1 ? ` ${STAR_WORD[u.stars]}` : ''}`).join(', ')}.`, priority: 'high' };
+  }
+
+  describeSynergies(): Say {
+    const traits = activeTraits(this.board);
+    if (!traits.length) return { text: 'No units on the board, so no synergies.', priority: 'high' };
+    const parts = traits.sort((a, b) => b.count - a.count).map((t) => {
+      const def = C.TRAITS.find((d) => d.name === t.trait)!;
+      const next = def.thresholds.find((th) => th > t.count);
+      const state = t.tier > 0 ? 'active' : 'not active';
+      return `${t.count} ${t.trait}, ${state}${next ? `, ${next - t.count} more for the next bonus` : ''}`;
+    });
+    return { text: `Synergies: ${parts.join('. ')}.`, priority: 'high' };
+  }
+
+  describeAffordable(): Say {
+    const slots = this.shop.map((id, i) => ({ id, i })).filter((x) => x.id && C.UNIT_BY_ID[x.id].cost <= this.gold);
+    if (!slots.length) return { text: `With ${this.gold} gold you can't afford anything in the shop.`, priority: 'high' };
+    return { text: `With ${this.gold} gold you can afford: ${slots.map((x) => `slot ${ordinal(x.i + 1)}, ${C.UNIT_BY_ID[x.id!].name}`).join('; ')}.`, priority: 'high' };
+  }
+
+  describeUpgrades(): Say {
+    const counts: Record<string, number> = {};
+    for (const u of [...this.board, ...this.bench]) if (u) { const k = `${u.defId}|${u.stars}`; counts[k] = (counts[k] ?? 0) + 1; }
+    const close = Object.entries(counts).filter(([k, n]) => n === 2 && !k.endsWith('|3'));
+    if (!close.length) return { text: 'You have no pairs yet. Three copies of a unit combine into a stronger one.', priority: 'high' };
+    const parts = close.map(([k]) => {
+      const [id, stars] = k.split('|');
+      const inShop = this.shop.findIndex((s) => s === id);
+      return `two ${C.UNIT_BY_ID[id].name}${stars === '2' ? ' two stars' : 's'}${inShop >= 0 && stars === '1' ? `, and one is in slot ${ordinal(inShop + 1)}` : ''}`;
+    });
+    return { text: `One more copy upgrades: ${parts.join('; ')}.`, priority: 'high' };
+  }
+
+  describeXp(): Say {
+    if (this.level >= C.MAX_LEVEL) return { text: 'You are at max level.', priority: 'high' };
+    const need = this.xpNeeded - this.xp;
+    return { text: `Level ${this.level}, ${this.xp} of ${this.xpNeeded} XP. ${need} more XP to level ${this.level + 1}, which costs ${Math.ceil(need / C.XP_BUY_AMOUNT) * C.XP_BUY_COST} gold.`, priority: 'high' };
+  }
+
+  describeStandings(): Say {
+    const list = [...this.opponents].sort((a, b) => b.hp - a.hp).map((o) => (o.hp > 0 ? `${o.name} ${o.hp}` : `${o.name} eliminated`));
+    return { text: `You have ${this.hp} health. ${list.join(', ')}.`, priority: 'high' };
+  }
+
+  /** Move bench units onto empty board spots until the board is full. */
+  fillBoard(): Say {
+    if (this.phase !== 'prep') return this.notInPrep();
+    const placed: string[] = [];
+    const bench = (this.bench.filter(Boolean) as OwnedUnit[]).sort((a, b) => b.stars - a.stars || C.UNIT_BY_ID[b.defId].cost - C.UNIT_BY_ID[a.defId].cost);
+    for (const u of bench) {
+      if (this.board.length >= this.maxUnits) break;
+      const cell = this.firstFreeCell(C.UNIT_BY_ID[u.defId].range > 1);
+      if (!cell) break;
+      this.bench = this.bench.map((b) => (b && b.uid === u.uid ? null : b));
+      this.board.push({ ...u, row: cell[0], col: cell[1] });
+      placed.push(`${C.UNIT_BY_ID[u.defId].name} in ${cellName(cell[0], cell[1])}`);
+    }
+    if (!placed.length) return { text: this.board.length >= this.maxUnits ? `Your board is already full with ${this.maxUnits} units.` : 'Your bench is empty.', priority: 'high' };
+    return { text: `Placed ${placed.join(', ')}. ${this.board.length} of ${this.maxUnits} units on the board.`, priority: 'high' };
+  }
+
+  buyAll(query: string): Say[] {
+    const q = query.toLowerCase();
+    const slots = this.shop.map((id, i) => ({ id, i })).filter((x) => x.id && (C.UNIT_BY_ID[x.id].name.toLowerCase() === q || C.UNIT_BY_ID[x.id].traits.some((t) => t.toLowerCase() === q)));
+    if (!slots.length) return [{ text: `There is no ${query} in the shop.`, priority: 'high' }];
+    return slots.flatMap((x) => this.buy(x.i + 1));
+  }
+
   describeStatus(): Say {
     return {
-      text: `Round ${this.round}. You have ${this.gold} gold, ${this.hp} health, level ${this.level} with ${this.xp} of ${this.xpNeeded} XP.`,
+      text: `Round ${this.round}. You have ${this.gold} gold, ${this.hp} health, level ${this.level} with ${this.xp} of ${this.xpNeeded} XP. ${this.board.length} of ${this.maxUnits} units on the board.`,
       priority: 'high',
     };
   }

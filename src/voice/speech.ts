@@ -16,18 +16,42 @@ class Speaker {
   private watchdog: number | undefined;
   /** id of the utterance currently playing; stale callbacks are ignored */
   private current = 0;
-  rate = 1.05;
+  rate = Number(store('ttsRate')) || 1.05;
+  /** English voices, best first */
+  voices: SpeechSynthesisVoice[] = [];
   lastSpoken = '';
   readonly supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   constructor() {
     if (!this.supported) return;
-    const pick = () => { this.voice = pickVoice(speechSynthesis.getVoices()); };
+    const pick = () => {
+      this.voices = rankVoices(speechSynthesis.getVoices());
+      const saved = store('ttsVoice');
+      this.voice = this.voices.find((v) => v.name === saved) ?? this.voices[0] ?? null;
+    };
     pick();
     speechSynthesis.addEventListener?.('voiceschanged', pick);
   }
 
   get voiceName() { return this.voice?.name ?? 'default'; }
+
+  setVoice(name: string) {
+    const v = this.voices.find((x) => x.name === name);
+    if (v) { this.voice = v; store('ttsVoice', v.name); }
+  }
+
+  /** Cycle to the next English voice. Returns its name. */
+  nextVoice(): string {
+    if (!this.voices.length) return this.voiceName;
+    const i = this.voices.findIndex((v) => v === this.voice);
+    this.setVoice(this.voices[(i + 1) % this.voices.length].name);
+    return this.voiceName;
+  }
+
+  setRate(r: number) {
+    this.rate = Math.max(0.7, Math.min(1.6, Math.round(r * 100) / 100));
+    store('ttsRate', String(this.rate));
+  }
   get isSpeaking() { return this.speaking; }
 
   onChange(l: Listener) { this.listeners.push(l); return () => { this.listeners = this.listeners.filter((x) => x !== l); }; }
@@ -39,7 +63,10 @@ class Speaker {
     const u = new SpeechSynthesisUtterance(' ');
     u.volume = 0;
     speechSynthesis.speak(u);
-    if (!this.voice) this.voice = pickVoice(speechSynthesis.getVoices());
+    if (!this.voice) {
+      this.voices = rankVoices(speechSynthesis.getVoices());
+      this.voice = this.voices.find((v) => v.name === store('ttsVoice')) ?? this.voices[0] ?? null;
+    }
   }
 
   say(text: string, priority: Priority = 'normal') {
@@ -93,9 +120,12 @@ class Speaker {
   }
 }
 
-function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+function store(k: string, v?: string): string | null {
+  try { if (v !== undefined) localStorage.setItem(k, v); return localStorage.getItem(k); } catch { return null; }
+}
+
+function rankVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
   const en = voices.filter((v) => v.lang.startsWith('en'));
-  if (!en.length) return null;
   const score = (v: SpeechSynthesisVoice) => {
     const n = v.name.toLowerCase();
     let s = 0;
@@ -108,7 +138,7 @@ function pickVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null 
     if (['novelty', 'bells', 'bubbles', 'whisper', 'zarvox', 'trinoids', 'bad news', 'good news', 'jester', 'organ', 'cellos', 'boing', 'albert', 'fred', 'hysterical', 'superstar', 'wobble'].some((k) => n.includes(k))) s -= 20;
     return s;
   };
-  return [...en].sort((a, b) => score(b) - score(a))[0];
+  return [...en].filter((v) => score(v) > -10).sort((a, b) => score(b) - score(a));
 }
 
 export const speaker = new Speaker();

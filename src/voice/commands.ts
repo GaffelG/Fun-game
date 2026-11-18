@@ -24,7 +24,18 @@ export type Command =
   | { type: 'help' }
   | { type: 'verbosity'; level: 'minimal' | 'balanced' | 'detailed' }
   | { type: 'timer'; on: boolean }
-  | { type: 'newGame' };
+  | { type: 'newGame' }
+  | { type: 'unitLimit' }
+  | { type: 'benchInfo' }
+  | { type: 'synergies' }
+  | { type: 'afford' }
+  | { type: 'upgrades' }
+  | { type: 'fillBoard' }
+  | { type: 'xpInfo' }
+  | { type: 'standings' }
+  | { type: 'buyAll'; name: string }
+  | { type: 'voice'; change: 'next' | 'faster' | 'slower' | 'which' }
+  | { type: 'timeLeft' };
 
 const NUM: Record<string, number> = {
   one: 1, won: 1, '1': 1, first: 1,
@@ -75,9 +86,35 @@ function findUnitName(t: string): string | null {
   return null;
 }
 
+/** "44" or "4 4" -> "4": recognizers often double a lone number. */
+function bareSlot(t: string): number | null {
+  const m = t.match(/^(?:number |slot )?([1-5])(?:\s?\1)*$/) ?? t.match(/^(?:number |slot )?(one|two|three|four|five|won|too|tree|free|fore)$/);
+  return m ? NUM[m[1]] : null;
+}
+
 export function parseCommand(raw: string): Command | null {
-  const t = normalize(raw).replace(/\b(by|bye|bi)\b/g, 'buy');
+  const t = normalize(raw).replace(/\b(by|bye|bi|bae|boy|vibe|bike|buyer)\b/g, 'buy').replace(/^(i|ill|i will|lets|please) /, '');
   if (!t) return null;
+
+  // A lone slot number means "buy that slot". This is the shortest, most reliable way to buy.
+  const lone = bareSlot(t) ?? bareSlot(t.replace(/^buy\s?/, ''));
+  if (lone) return { type: 'buy', slot: lone };
+
+  if (/\bhow many (units|characters|champions|heroes)\b|\b(unit|board|team) (limit|cap|size|space)\b|\bhow many can i\b|\bmax(imum)? units\b|\b(room|space) (on|for)\b/.test(t)) return { type: 'unitLimit' };
+  if (/\b(whats|what is|who is|whos)? ?on (my|the) bench\b|\bmy bench\b|\bbench (info|units)\b/.test(t) && !/\b(place|put|move|sell)\b/.test(t)) return { type: 'benchInfo' };
+  if (/\b(synergy|synergies|traits|bonuses)\b/.test(t)) return { type: 'synergies' };
+  if (/\b(afford|what can i buy)\b/.test(t)) return { type: 'afford' };
+  if (/\b(upgrade|upgrades|close to|pairs|copies)\b/.test(t) && !/\bbuy\b/.test(t)) return { type: 'upgrades' };
+  if (/\b(fill|auto ?place|place all|place everything|field all|put all)\b/.test(t)) return { type: 'fillBoard' };
+  if (/\b(how much|my|current) (xp|exp|experience)\b|\bnext level\b|\bhow far\b/.test(t)) return { type: 'xpInfo' };
+  if (/\b(standings|scoreboard|leaderboard|everyone|all opponents|opponents health)\b/.test(t)) return { type: 'standings' };
+  if (/\b(time left|how long|seconds left|how much time)\b/.test(t)) return { type: 'timeLeft' };
+  if (/\b(next|change|different|other|switch) voice\b/.test(t)) return { type: 'voice', change: 'next' };
+  if (/\b(speak|talk|read) faster\b|\bfaster\b/.test(t)) return { type: 'voice', change: 'faster' };
+  if (/\b(speak|talk|read) slower\b|\bslower\b|\bslow down\b/.test(t)) return { type: 'voice', change: 'slower' };
+  if (/\b(which|what) voice\b/.test(t)) return { type: 'voice', change: 'which' };
+  const buyAll = t.match(/\bbuy (all|every|each)( the)? (\w+(?: \w+)?)/);
+  if (buyAll) { const name = findUnitName(buyAll[3]); if (name) return { type: 'buyAll', name }; }
 
   if (/\b(stop talking|quiet|shut up|silence|skip|be quiet)\b/.test(t)) return { type: 'quiet' };
   if (/\b(repeat|say that again|what did you say|pardon)\b/.test(t)) return { type: 'repeat' };
@@ -133,4 +170,8 @@ export const HELP_TEXT =
   'You can say: what is in the shop, buy slot two, refresh, buy experience, level up, ' +
   'place my mage in B2, move my warrior to A3, bench my squire, sell my squire, tell me about my team, ' +
   'scout opponent, how much gold, status, fight, what happened last battle, repeat, or quiet. ' +
+  'To buy, you can also just say the slot number, like four. ' +
+  'More questions: how many units can I have, what is on my bench, my synergies, what can I afford, what can I upgrade, how much XP, standings, time left. ' +
+  'Fill board puts bench units on empty spots. Buy all squires buys every copy in the shop. ' +
+  'Voice: next voice, faster, slower. ' +
   'Settings: minimal, balanced or detailed announcements, start timer, stop timer, and new game.';
