@@ -11,7 +11,7 @@ A single-player, hands-free auto-battler for iPhone, controlled by voice. It's b
 Just say a slot number ("four") to buy it. Say "what should I do" for coaching, "undo" if a purchase was misheard.
 
 Example commands: "what's in the shop", "buy slot two", "refresh", "buy experience", "level up",
-"place my mage in B2", "move my warrior to A3", "bench my squire", "sell my squire",
+"ninja A3" (or "place ninja on A3"), "knight front", "move my archer to the back", "bench my squire", "sell my squire",
 "tell me about my team", "scout opponent", "how much gold", "status", "fight", "repeat", "quiet",
 "minimal / balanced / detailed", "start timer", "new game".
 

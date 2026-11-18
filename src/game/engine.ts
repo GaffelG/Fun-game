@@ -261,6 +261,16 @@ export class Game {
     return all.find((u) => C.UNIT_BY_ID[u.defId].traits.some((t) => q.includes(t.toLowerCase()))) ?? null;
   }
 
+  /** Best free column in a row (middle first). If the row is full, returns the middle column (a swap). */
+  freeColInRow(row: number, exceptUid?: number): number {
+    return [1, 2, 0, 3].find((c) => !this.board.some((u) => u.row === row && u.col === c && u.uid !== exceptUid)) ?? 1;
+  }
+
+  /** Is a unit with this name in the shop / owned? */
+  shopSlotOf(name: string): number {
+    return this.shop.findIndex((id) => id && C.UNIT_BY_ID[id].name.toLowerCase() === name.toLowerCase());
+  }
+
   place(query: string, row: number, col: number): Say {
     if (this.phase !== 'prep') return this.notInPrep();
     // When placing, prefer a unit from the bench

@@ -64,7 +64,7 @@ export const UNITS: UnitDef[] = [
   // ----- 1 gold -----
   { id: 'knight', name: 'Knight', cost: 1, traits: ['Warrior', 'Storm'], hp: 600, attack: 50, attackSpeed: 0.7, armor: 25, range: 1, magic: false,
     ability: { name: 'Shield Bash', description: 'Stuns the target for one second.', mana: 60, power: 80, kind: 'stun', stunSeconds: 1 } },
-  { id: 'spark', name: 'Spark', cost: 1, traits: ['Mage', 'Fire'], hp: 450, attack: 40, attackSpeed: 0.6, armor: 10, range: 3, magic: true,
+  { id: 'lava', name: 'Lava', cost: 1, traits: ['Mage', 'Fire'], hp: 450, attack: 40, attackSpeed: 0.6, armor: 10, range: 3, magic: true,
     ability: { name: 'Fireball', description: 'Hurls a fireball for heavy magic damage.', mana: 50, power: 200, kind: 'nuke' } },
   { id: 'archer', name: 'Archer', cost: 1, traits: ['Ranger', 'Frost'], hp: 480, attack: 55, attackSpeed: 0.75, armor: 15, range: 3, magic: false,
     ability: { name: 'Ice Arrow', description: 'Fires an arrow for bonus physical damage.', mana: 60, power: 150, kind: 'nuke', physical: true } },
@@ -128,7 +128,7 @@ export const NAME_ALIASES: Record<string, string> = {
   shamon: 'shaman', vikings: 'viking', tigers: 'tiger', giants: 'giant', monks: 'monk',
   generals: 'general', ghosts: 'ghost', snipers: 'sniper', dragons: 'dragon', titans: 'titan',
   wizards: 'wizard', queens: 'queen', ninjas: 'ninja', bandits: 'bandit', archers: 'archer', hunters: 'hunter',
-  falcons: 'falcon', healers: 'healer', sparks: 'spark', phoenixes: 'phoenix', fenix: 'phoenix',
+  falcons: 'falcon', healers: 'healer', larva: 'lava', lover: 'lava', laba: 'lava', java: 'lava', phoenixes: 'phoenix', fenix: 'phoenix',
 };
 
 export interface TraitDef {
