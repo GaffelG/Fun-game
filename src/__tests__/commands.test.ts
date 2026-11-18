@@ -184,3 +184,11 @@ describe('hard-to-hear commands', () => {
     expect(parseBest(['ninja', 'ninja a3'])).toEqual({ type: 'place', name: 'Ninja', row: 0, col: 2 });
   });
 });
+
+describe('voice commands', () => {
+  it('parses voice roles', () => {
+    expect(parseCommand('next voice')).toEqual({ type: 'voice', change: 'next' });
+    expect(parseCommand('change voice')).toEqual({ type: 'voice', change: 'next' });
+    expect(parseCommand('next battle voice')).toEqual({ type: 'voice', change: 'next', role: 'battle' });
+  });
+});

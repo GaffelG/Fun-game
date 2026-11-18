@@ -30,7 +30,7 @@ export default function App() {
 
   const say = useCallback((items: Say | Say[]) => {
     for (const s of Array.isArray(items) ? items : [items]) {
-      speaker.say(s.text, s.priority);
+      speaker.say(s.text, s.priority, s.role ?? 'main');
       addLog('game', s.text);
     }
     rerender();
@@ -48,14 +48,14 @@ export default function App() {
     const { result, opponentName } = game.startBattle();
     narrationMuted.current = false;
     const v = verbosityRef.current;
-    if (v !== 'minimal') say({ text: `Battle against ${opponentName} begins.`, priority: 'normal' });
+    if (v !== 'minimal') say({ text: `Battle against ${opponentName} begins.`, priority: 'normal', role: 'battle' });
     rerender();
     // Play the battle back in compressed real time (max ~12 seconds)
     const scale = Math.min(1, 12 / Math.max(1, result.duration));
     for (const e of result.events) {
       if (v === 'minimal') continue;
       if (v === 'balanced' && !e.important) continue;
-      battleTimers.current.push(window.setTimeout(() => { if (!narrationMuted.current) say({ text: e.text, priority: 'low' }); }, e.t * scale * 1000));
+      battleTimers.current.push(window.setTimeout(() => { if (!narrationMuted.current) say({ text: e.text, priority: 'low', role: 'battle' }); }, e.t * scale * 1000));
     }
     battleTimers.current.push(window.setTimeout(() => {
       const out = gameRef.current.finishBattle();
@@ -142,10 +142,16 @@ export default function App() {
       case 'timeLeft':
         return say({ text: timerOnRef.current ? `${countdown.current} seconds until battle.` : 'The round timer is off. Say fight when you are ready, or start timer.', priority: 'high' });
       case 'voice': {
-        if (cmd.change === 'next') { const n = speaker.nextVoice(); rerender(); return say({ text: `This is ${n}. Say next voice to try another.`, priority: 'high' }); }
+        if (cmd.change === 'next') {
+          const role = cmd.role ?? 'main';
+          if (!speaker.voices.length) return say({ text: 'Your phone has not given me any voices to choose from yet. Try again in a few seconds.', priority: 'high' });
+          const n = speaker.nextVoice(role);
+          rerender();
+          return say({ text: `This is ${n}. Say next ${role === 'battle' ? 'battle ' : ''}voice to try another. ${speaker.voices.length} voices available.`, priority: 'high', role });
+        }
         if (cmd.change === 'faster') { speaker.setRate(speaker.rate + 0.1); rerender(); return say({ text: 'Speaking faster.', priority: 'high' }); }
         if (cmd.change === 'slower') { speaker.setRate(speaker.rate - 0.1); rerender(); return say({ text: 'Speaking slower.', priority: 'high' }); }
-        return say({ text: `The voice is ${speaker.voiceName}, at speed ${speaker.rate}.`, priority: 'high' });
+        return say({ text: `The announcer is ${speaker.voiceLabel('main')}, and battle commentary is ${speaker.voiceLabel('battle')}. Speed ${speaker.rate}.`, priority: 'high' });
       }
       case 'newGame':
         battleTimers.current.forEach(clearTimeout); battleTimers.current = [];
@@ -170,6 +176,8 @@ export default function App() {
   handlerRef.current = handlePhrase;
 
   useEffect(() => listener.subscribe(setMic), [listener]);
+  // Re-render when the phone delivers its voice list (it often arrives late on iPhone).
+  useEffect(() => speaker.onVoicesChanged(rerender), []);
   useEffect(() => speaker.onChange((s) => {
     setSpeaking(s);
     // Don't let the mic hear the game talking.
@@ -303,11 +311,18 @@ export default function App() {
           <button className={timerOn ? 'active' : ''} onClick={() => execute({ type: 'timer', on: !timerOn })}>Round timer {timerOn ? 'on' : 'off'}</button>
         </div>
         <div className="voice-settings">
-          <label>Voice
-            <select value={speaker.voiceName} onChange={(e) => { speaker.setVoice(e.target.value); rerender(); speaker.say(`Hi, I'm ${e.target.value}. You bought Ninja.`, 'high'); }}>
-              {speaker.voices.map((v) => <option key={v.name + v.lang} value={v.name}>{v.name} ({v.lang})</option>)}
-            </select>
-          </label>
+          {speaker.voices.length === 0 && <p className="hint warn">No voices loaded yet. Tap Start voice game, wait a few seconds, or reload the page.</p>}
+          {(['main', 'battle'] as const).map((role) => (
+            <label key={role}>{role === 'main' ? 'Announcer voice' : 'Battle commentary voice'}
+              <div className="voice-row">
+                <select value={speaker.voiceId(role)} onChange={(e) => { speaker.setVoice(e.target.value, role); speaker.unlock(); speaker.preview(role); }}>
+                  {speaker.voices.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+                </select>
+                <button type="button" onClick={() => { speaker.unlock(); speaker.preview(role); }}>Test</button>
+              </div>
+            </label>
+          ))}
+          <p className="hint">{speaker.voices.length} English voices found on this phone. Voices marked "fun" are novelty voices.</p>
           <label>Speed {speaker.rate.toFixed(2)}
             <input type="range" min={0.7} max={1.6} step={0.05} value={speaker.rate} onChange={(e) => { speaker.setRate(Number(e.target.value)); rerender(); }} />
           </label>

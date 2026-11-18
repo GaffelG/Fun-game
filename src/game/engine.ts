@@ -3,7 +3,7 @@ import { BoardUnit, BattleResult, activeTraits, simulateBattle } from './battle'
 import { Opponent, buildOpponentBoard, createOpponents, describeTeam } from './opponents';
 
 export type Priority = 'high' | 'normal' | 'low';
-export interface Say { text: string; priority: Priority }
+export interface Say { text: string; priority: Priority; role?: 'main' | 'battle' }
 
 export interface OwnedUnit { uid: number; defId: string; stars: number; }
 export type Phase = 'prep' | 'battle' | 'gameover';
