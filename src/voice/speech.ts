@@ -14,7 +14,8 @@ type Listener = (speaking: boolean) => void;
 const RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
 const NOVELTY = ['bells', 'bubbles', 'whisper', 'zarvox', 'trinoids', 'bad news', 'good news', 'jester', 'organ', 'cellos', 'boing', 'albert', 'fred', 'hysterical', 'superstar', 'wobble', 'junior', 'kathy', 'ralph', 'grandma', 'grandpa', 'rocko', 'shelley', 'eddy', 'flo', 'reed', 'sandy'];
 
-export interface VoiceOption { id: string; label: string; voice: SpeechSynthesisVoice; fun: boolean }
+/** quality: 2 = Premium, 1 = Enhanced, 0 = basic */
+export interface VoiceOption { id: string; label: string; voice: SpeechSynthesisVoice; fun: boolean; quality: number }
 
 class Speaker {
   private queue: Item[] = [];
@@ -48,13 +49,20 @@ class Speaker {
     if (list.length === this.voices.length && list.every((v, i) => v.id === this.voices[i].id)) return;
     this.voices = list;
     for (const role of ['main', 'battle'] as Role[]) {
-      const saved = store(`ttsVoice_${role}`);
+      const saved = store(`ttsVoice2_${role}`);
       this.chosen[role] = list.find((v) => v.id === saved) ?? null;
     }
     // Defaults: best voice for the announcer, a different good voice for battle commentary.
     if (!this.chosen.main) this.chosen.main = list[0] ?? null;
-    if (!this.chosen.battle) this.chosen.battle = list.find((v) => !v.fun && v.id !== this.chosen.main?.id) ?? this.chosen.main;
+    // Battle commentary uses the same voice as the announcer unless the player picks another.
+    if (!this.chosen.battle) this.chosen.battle = this.chosen.main;
     this.voiceListeners.forEach((l) => l());
+  }
+
+  /** The voices worth offering: Premium/Enhanced if the phone has any, otherwise the 5 best basic ones. */
+  get shortlist(): VoiceOption[] {
+    const good = this.voices.filter((v) => v.quality > 0 && !v.fun);
+    return good.length ? good : this.voices.filter((v) => !v.fun).slice(0, 5);
   }
 
   onVoicesChanged(l: () => void) { this.voiceListeners.push(l); return () => { this.voiceListeners = this.voiceListeners.filter((x) => x !== l); }; }
@@ -68,15 +76,16 @@ class Speaker {
     const v = this.voices.find((x) => x.id === id);
     if (!v) return;
     this.chosen[role] = v;
-    store(`ttsVoice_${role}`, v.id);
+    store(`ttsVoice2_${role}`, v.id);
     this.voiceListeners.forEach((l) => l());
   }
 
   /** Cycle to the next voice for a role. Returns its label. */
   nextVoice(role: Role = 'main'): string {
     if (!this.voices.length) { this.loadVoices(); if (!this.voices.length) return this.voiceLabel(role); }
-    const i = this.voices.findIndex((v) => v.id === this.voiceId(role));
-    this.setVoice(this.voices[(i + 1) % this.voices.length].id, role);
+    const list = this.shortlist;
+    const i = list.findIndex((v) => v.id === this.voiceId(role));
+    this.setVoice(list[(i + 1) % list.length].id, role);
     return this.voiceLabel(role);
   }
 
@@ -187,7 +196,8 @@ function buildOptions(voices: SpeechSynthesisVoice[]): VoiceOption[] {
       const accent = ACCENT[lang] ?? lang;
       const uri = (v.voiceURI || '').toLowerCase();
       const quality = /premium/.test(uri) && !/premium/i.test(v.name) ? ', Premium' : /enhanced/.test(uri) && !/enhanced/i.test(v.name) ? ', Enhanced' : '';
-      return { id: v.voiceURI || `${v.name}|${v.lang}`, label: `${v.name} (${accent}${quality}${fun ? ', fun' : ''})`, voice: v, fun, s: score(v) };
+      const q = /premium/i.test(`${uri} ${v.name}`) ? 2 : /enhanced/i.test(`${uri} ${v.name}`) ? 1 : 0;
+      return { id: v.voiceURI || `${v.name}|${v.lang}`, label: `${v.name} (${accent}${quality}${fun ? ', fun' : ''})`, voice: v, fun, quality: q, s: score(v) };
     })
     .filter((o) => (seen.has(o.id) ? false : (seen.add(o.id), true)))
     .sort((a, b) => Number(a.fun) - Number(b.fun) || b.s - a.s || a.label.localeCompare(b.label))
