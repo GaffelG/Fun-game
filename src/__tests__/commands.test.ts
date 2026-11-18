@@ -42,4 +42,22 @@ describe('Game', () => {
     expect(out.length).toBeGreaterThan(0);
     expect(g.round).toBe(2);
   });
+  it('ignores finishBattle outside a battle', () => {
+    const g = new Game();
+    expect(g.finishBattle()).toEqual([]);
+    g.gold = 10; g.buy(1); g.startBattle();
+    g.finishBattle();
+    const round = g.round;
+    expect(g.finishBattle()).toEqual([]);
+    expect(g.round).toBe(round);
+  });
+  it('never sells from an empty pool', () => {
+    const g = new Game();
+    g.shop = [null, null, null, null, null];
+    for (const k of Object.keys(g.pool)) g.pool[k] = 0;
+    g.gold = 10;
+    g.refresh();
+    expect(g.shop.every((s) => s === null)).toBe(true);
+    expect(Object.values(g.pool).every((n) => n >= 0)).toBe(true);
+  });
 });

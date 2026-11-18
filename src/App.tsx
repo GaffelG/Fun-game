@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Game, Say, cellName } from './game/engine';
-import { BOARD_COLS, BOARD_ROWS, PREP_SECONDS, UNIT_BY_ID, UNITS } from './game/config';
+import { BOARD_COLS, BOARD_ROWS, PREP_SECONDS, TRAITS, UNIT_BY_ID, UNITS } from './game/config';
 import { activeTraits } from './game/battle';
 import { speaker } from './voice/speech';
 import { Listener, MicState } from './voice/recognition';
@@ -36,6 +36,7 @@ export default function App() {
 
   // ---------- Battle ----------
   const battleTimers = useRef<number[]>([]);
+  const countdown = useRef(PREP_SECONDS);
   const runBattle = useCallback(() => {
     const game = gameRef.current;
     if (game.phase !== 'prep') return;
@@ -58,7 +59,7 @@ export default function App() {
         if (verbosityRef.current !== 'minimal') say({ ...gameRef.current.scout(), text: `Next up: ${gameRef.current.scout().text}`, priority: 'normal' });
         say(gameRef.current.describeShop('New shop. '));
       }
-      setSecondsLeft(PREP_SECONDS);
+      countdown.current = PREP_SECONDS; setSecondsLeft(PREP_SECONDS);
     }, result.duration * scale * 1000 + 800));
   }, [say]);
 
@@ -83,7 +84,13 @@ export default function App() {
       case 'team': return say(game.describeTeam());
       case 'unitInfo': {
         const u = UNITS.find((x) => x.name === cmd.name);
-        return u ? say(game.describeUnit(u.id)) : undefined;
+        if (u) return say(game.describeUnit(u.id));
+        const trait = TRAITS.find((t) => t.name.toLowerCase() === cmd.name.toLowerCase());
+        if (trait) {
+          const members = UNITS.filter((x) => x.traits.includes(trait.name)).map((x) => `${x.name}, ${x.cost} gold`).join('; ');
+          return say({ text: `${trait.name}. ${trait.description} Bonus at ${trait.thresholds.join(' and ')} units. ${trait.name} units: ${members}.`, priority: 'high' });
+        }
+        return say({ text: `I don't know a unit called ${cmd.name}.`, priority: 'high' });
       }
       case 'scout': return say(game.scout());
       case 'gold': return say({ text: `You have ${game.gold} gold.`, priority: 'high' });
@@ -97,11 +104,12 @@ export default function App() {
         setVerbosity(cmd.level); localStorageSet('verbosity', cmd.level);
         return say({ text: `Announcements set to ${cmd.level}.`, priority: 'high' });
       case 'timer':
-        setTimerOn(cmd.on); setSecondsLeft(PREP_SECONDS);
+        setTimerOn(cmd.on); countdown.current = PREP_SECONDS; setSecondsLeft(PREP_SECONDS);
         return say({ text: cmd.on ? `Round timer on. Battles start automatically after ${PREP_SECONDS} seconds.` : 'Round timer off. Say fight when you are ready.', priority: 'high' });
       case 'newGame':
         battleTimers.current.forEach(clearTimeout); battleTimers.current = [];
         gameRef.current = new Game();
+        countdown.current = PREP_SECONDS; setSecondsLeft(PREP_SECONDS);
         say({ text: 'New game started.', priority: 'high' });
         return say(gameRef.current.describeShop());
     }
@@ -143,11 +151,11 @@ export default function App() {
     if (!started || !timerOn) return;
     const id = window.setInterval(() => {
       if (gameRef.current.phase !== 'prep') return;
-      setSecondsLeft((s) => {
-        if (s === 11) say({ text: 'Ten seconds until battle.', priority: 'normal' });
-        if (s <= 1) { runBattle(); return PREP_SECONDS; }
-        return s - 1;
-      });
+      // Side effects stay outside the state setter so they run exactly once.
+      countdown.current -= 1;
+      if (countdown.current === 10) say({ text: 'Ten seconds until battle.', priority: 'normal' });
+      if (countdown.current <= 0) { countdown.current = PREP_SECONDS; runBattle(); }
+      setSecondsLeft(countdown.current);
     }, 1000);
     return () => clearInterval(id);
   }, [started, timerOn, runBattle, say]);

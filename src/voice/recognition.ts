@@ -68,6 +68,8 @@ export class Listener {
   resume() {
     if (!this.wanted || !this.paused) return;
     this.paused = false;
+    // A deliberate pause/resume is not a crash loop; don't count it.
+    this.recentRestarts = [];
     this.spawn();
   }
 

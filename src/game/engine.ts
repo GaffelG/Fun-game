@@ -52,11 +52,18 @@ export class Game {
   private rollShop() {
     for (const id of this.shop) if (id) this.pool[id]++;
     const odds = C.SHOP_ODDS[this.level];
-    this.shop = Array.from({ length: C.SHOP_SIZE }, () => {
+    this.shop = Array.from({ length: C.SHOP_SIZE }, (): string | null => {
       let r = Math.random() * 100, cost = 1;
       for (let i = 0; i < odds.length; i++) { r -= odds[i]; if (r < 0) { cost = i + 1; break; } }
-      const options = C.UNITS.filter((u) => u.cost === cost && this.pool[u.id] > 0);
-      const pick = options[Math.floor(Math.random() * options.length)] ?? C.UNITS[0];
+      // If the rolled tier is sold out, fall back to the nearest tier that still has stock.
+      const tiers = [cost, ...[1, 2, 3, 4, 5].filter((c) => c !== cost).sort((a, b) => Math.abs(a - cost) - Math.abs(b - cost))];
+      let options: C.UnitDef[] = [];
+      for (const tc of tiers) {
+        options = C.UNITS.filter((u) => u.cost === tc && this.pool[u.id] > 0);
+        if (options.length) break;
+      }
+      if (!options.length) return null;
+      const pick = options[Math.floor(Math.random() * options.length)];
       this.pool[pick.id]--;
       return pick.id;
     });
@@ -246,6 +253,7 @@ export class Game {
     }
     // from bench
     const benchIdx = this.bench.findIndex((b) => b && b.uid === unit.uid);
+    if (benchIdx < 0) return { text: `Could not find ${name} on your bench.`, priority: 'high' };
     if (occupant) {
       this.board = this.board.filter((u) => u.uid !== occupant.uid);
       this.bench[benchIdx] = { uid: occupant.uid, defId: occupant.defId, stars: occupant.stars };
@@ -307,7 +315,9 @@ export class Game {
 
   /** Apply battle results and start next prep round. Returns announcements. */
   finishBattle(): Say[] {
-    const r = this.lastBattle!;
+    if (this.phase !== 'battle' || !this.lastBattle) return [];
+    const r = this.lastBattle;
+    this.lastBattle = null;
     const out: Say[] = [];
     const op = this.opponent;
     const survivorsDmg = (side: 0 | 1) => r.survivors.filter((s) => s.side === side).reduce((a, s) => a + s.stars, 0);

@@ -29,6 +29,9 @@ interface Fighter {
   stunned: number;
   assassin: boolean;
   dmgMult: number;
+  range: number;
+  /** how far this unit has walked toward the enemy */
+  advance: number;
 }
 
 export interface BattleEvent {
@@ -84,13 +87,13 @@ function buildFighters(units: BoardUnit[], side: 0 | 1): Fighter[] {
       side, name: d.name, defId: d.id, stars: u.stars, row: u.row, col: u.col,
       maxHp: hp, hp, shield: 0, attack, attackSpeed: as, armor: d.armor + guardianArmor, magic: d.magic,
       mana, maxMana: d.ability.mana, abilityPower: ap * m, cooldown: 0.5 + Math.random() * 0.3, stunned: 0,
-      assassin: has('Assassin'), dmgMult,
+      assassin: has('Assassin'), dmgMult, range: d.range, advance: 0,
     };
   });
 }
 
 function distance(a: Fighter, b: Fighter) {
-  return a.row + b.row + 1 + Math.abs(a.col - (3 - b.col)) * 0.5;
+  return Math.max(1, a.row + b.row + 1 + Math.abs(a.col - (3 - b.col)) * 0.5 - a.advance - b.advance);
 }
 
 function dealDamage(target: Fighter, raw: number, magic: boolean) {
@@ -125,14 +128,21 @@ export function simulateBattle(playerUnits: BoardUnit[], enemyUnits: BoardUnit[]
       // Target selection: assassins dive the back line, everyone else hits the closest enemy.
       const sorted = [...enemies].sort((a, b) => distance(f, a) - distance(f, b));
       const target = f.assassin ? sorted[sorted.length - 1] : sorted[0];
+      // Out of reach: walk toward the target instead of attacking (assassins leap instantly).
+      if (!f.assassin && distance(f, target) > f.range + 0.01) {
+        f.advance += dt * 1.5;
+        f.cooldown = 0;
+        continue;
+      }
+      let hit = false;
 
       if (f.mana >= f.maxMana) {
         f.mana = 0;
         const ab = UNIT_BY_ID[f.defId].ability;
         const power = ab.power * f.abilityPower * f.dmgMult;
-        if (ab.kind === 'nuke') dealDamage(target, power, true);
-        else if (ab.kind === 'aoe') enemies.forEach((e) => dealDamage(e, power, true));
-        else if (ab.kind === 'stun') { dealDamage(target, power, true); target.stunned = 1.5; }
+        if (ab.kind === 'nuke') { dealDamage(target, power, true); hit = true; }
+        else if (ab.kind === 'aoe') { enemies.forEach((e) => dealDamage(e, power, true)); hit = true; }
+        else if (ab.kind === 'stun') { dealDamage(target, power, true); target.stunned = 1.5; hit = true; }
         else if (ab.kind === 'shield') f.shield += power;
         else if (ab.kind === 'heal') {
           const ally = alive(f.side).sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0];
@@ -143,6 +153,7 @@ export function simulateBattle(playerUnits: BoardUnit[], enemyUnits: BoardUnit[]
         }
       } else {
         dealDamage(target, f.attack * f.dmgMult, f.magic);
+        hit = true;
         f.mana += 10;
       }
       f.cooldown = 1 / f.attackSpeed;
@@ -159,7 +170,7 @@ export function simulateBattle(playerUnits: BoardUnit[], enemyUnits: BoardUnit[]
         }
       }
       // Mana from taking hits
-      if (target.hp > 0) target.mana += 5;
+      if (hit && target.hp > 0) target.mana += 5;
     }
   }
 

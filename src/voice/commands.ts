@@ -132,4 +132,5 @@ export function parseCommand(raw: string): Command | null {
 export const HELP_TEXT =
   'You can say: what is in the shop, buy slot two, refresh, buy experience, level up, ' +
   'place my mage in B2, move my warrior to A3, bench my squire, sell my squire, tell me about my team, ' +
-  'scout opponent, how much gold, status, fight, repeat, or quiet.';
+  'scout opponent, how much gold, status, fight, what happened last battle, repeat, or quiet. ' +
+  'Settings: minimal, balanced or detailed announcements, start timer, stop timer, and new game.';
