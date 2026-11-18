@@ -35,7 +35,10 @@ export type Command =
   | { type: 'standings' }
   | { type: 'buyAll'; name: string }
   | { type: 'voice'; change: 'next' | 'faster' | 'slower' | 'which' }
-  | { type: 'timeLeft' };
+  | { type: 'timeLeft' }
+  | { type: 'advice' }
+  | { type: 'undo' }
+  | { type: 'lock'; on: boolean };
 
 const NUM: Record<string, number> = {
   one: 1, won: 1, '1': 1, first: 1,
@@ -95,6 +98,11 @@ function bareSlot(t: string): number | null {
 export function parseCommand(raw: string): Command | null {
   const t = normalize(raw).replace(/\b(by|bye|bi|bae|boy|vibe|bike|buyer)\b/g, 'buy').replace(/^(i|ill|i will|lets|please) /, '');
   if (!t) return null;
+
+  if (/\b(undo|take (that|it) back|cancel (that|purchase)|oops|mistake|wrong one)\b/.test(t)) return { type: 'undo' };
+  if (/\b(what should i do|advice|any tips|tip|suggest|suggestion|recommend|coach|help me decide)\b/.test(t)) return { type: 'advice' };
+  if (/\bunlock( the)? shop\b/.test(t)) return { type: 'lock', on: false };
+  if (/\b(lock|freeze|keep|hold)( the)? shop\b/.test(t)) return { type: 'lock', on: true };
 
   // A lone slot number means "buy that slot". This is the shortest, most reliable way to buy.
   const lone = bareSlot(t) ?? bareSlot(t.replace(/^buy\s?/, ''));
@@ -170,7 +178,8 @@ export const HELP_TEXT =
   'You can say: what is in the shop, buy slot two, refresh, buy experience, level up, ' +
   'place my mage in B2, move my warrior to A3, bench my squire, sell my squire, tell me about my team, ' +
   'scout opponent, how much gold, status, fight, what happened last battle, repeat, or quiet. ' +
-  'To buy, you can also just say the slot number, like four. ' +
+  'To buy, you can also just say the slot number, like four. Say undo if I misheard a purchase. ' +
+  'Ask what should I do for advice. Lock shop keeps the shop for next round. ' +
   'More questions: how many units can I have, what is on my bench, my synergies, what can I afford, what can I upgrade, how much XP, standings, time left. ' +
   'Fill board puts bench units on empty spots. Buy all squires buys every copy in the shop. ' +
   'Voice: next voice, faster, slower. ' +

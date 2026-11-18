@@ -94,3 +94,39 @@ describe('new commands', () => {
   ];
   for (const [input, expected] of cases) it(input, () => expect(parseCommand(input)).toEqual(expected));
 });
+
+describe('smart features', () => {
+  it('parses', () => {
+    expect(parseCommand('what should I do')).toEqual({ type: 'advice' });
+    expect(parseCommand('undo')).toEqual({ type: 'undo' });
+    expect(parseCommand('lock the shop')).toEqual({ type: 'lock', on: true });
+    expect(parseCommand('unlock shop')).toEqual({ type: 'lock', on: false });
+  });
+  it('undo refunds a purchase', () => {
+    const g = new Game();
+    g.shop = ['squire', 'ember', 'scout', 'stonewall', 'pyro'];
+    const before = g.gold;
+    g.buy(1);
+    expect(g.undo().text).toContain('Undone');
+    expect(g.gold).toBe(before);
+    expect(g.shop[0]).toBe('squire');
+    expect(g.board.length).toBe(0);
+  });
+  it('shop hints upgrades and advice suggests it', () => {
+    const g = new Game();
+    g.gold = 20;
+    g.shop = ['squire', 'squire', 'ember', null, null];
+    g.buy(1); g.buy(2);
+    g.shop = ['ember', 'squire', null, null, null];
+    expect(g.describeShop().text).toContain('Upgrades your unit');
+    expect(g.advice().text).toContain('slot two');
+  });
+  it('locked shop survives a round', () => {
+    const g = new Game();
+    g.gold = 10; g.buy(1);
+    const shop = [...g.shop];
+    g.setLock(true);
+    g.startBattle(); g.finishBattle();
+    if (g.phase === 'prep') expect(g.shop).toEqual(shop);
+  });
+});

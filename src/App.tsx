@@ -62,7 +62,7 @@ export default function App() {
       say(out);
       if (gameRef.current.phase === 'prep') {
         if (verbosityRef.current !== 'minimal') say({ ...gameRef.current.scout(), text: `Next up: ${gameRef.current.scout().text}`, priority: 'normal' });
-        say(gameRef.current.describeShop('New shop. '));
+        say(gameRef.current.describeShop(gameRef.current.shopWasKept ? 'Your locked shop: ' : 'New shop. '));
       }
       countdown.current = PREP_SECONDS; setSecondsLeft(PREP_SECONDS);
     }, result.duration * scale * 1000 + 800));
@@ -111,6 +111,9 @@ export default function App() {
       case 'timer':
         setTimerOn(cmd.on); countdown.current = PREP_SECONDS; setSecondsLeft(PREP_SECONDS);
         return say({ text: cmd.on ? `Round timer on. Battles start automatically after ${PREP_SECONDS} seconds.` : 'Round timer off. Say fight when you are ready.', priority: 'high' });
+      case 'advice': return say(game.advice());
+      case 'undo': return say(game.undo());
+      case 'lock': rerender(); return say(game.setLock(cmd.on));
       case 'unitLimit': return say(game.describeUnitLimit());
       case 'benchInfo': return say(game.describeBench());
       case 'synergies': return say(game.describeSynergies());
@@ -246,6 +249,9 @@ export default function App() {
           <button onClick={() => execute({ type: 'refresh' })}>Refresh (2)</button>
           <button onClick={() => execute({ type: 'buyXp' })}>Buy XP (4)</button>
           <button onClick={() => execute({ type: 'fight' })} disabled={g.phase !== 'prep'}>Fight{timerOn ? ` (${secondsLeft}s)` : ''}</button>
+          <button onClick={() => execute({ type: 'advice' })}>Coach</button>
+          <button onClick={() => execute({ type: 'undo' })}>Undo</button>
+          <button className={g.shopLocked ? 'active' : ''} onClick={() => execute({ type: 'lock', on: !g.shopLocked })}>{g.shopLocked ? 'Locked' : 'Lock'}</button>
         </div>
       </section>
 

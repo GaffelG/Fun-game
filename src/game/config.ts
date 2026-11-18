@@ -80,10 +80,10 @@ export const UNITS: UnitDef[] = [
     ability: { name: 'Chain Lightning', description: 'Lightning hits every enemy.', mana: 80, power: 130, kind: 'aoe' } },
   { id: 'cleric', name: 'Frost Cleric', cost: 3, traits: ['Mage', 'Frost'], hp: 620, attack: 40, attackSpeed: 0.6, armor: 20, range: 3, magic: true,
     ability: { name: 'Healing Snow', description: 'Heals the weakest ally.', mana: 70, power: 300, kind: 'heal' } },
-  { id: 'warlord', name: 'Warlord', cost: 4, traits: ['Warrior', 'Guardian'], hp: 1100, attack: 85, attackSpeed: 0.75, armor: 50, range: 1, magic: false,
-    ability: { name: 'War Cry', description: 'Shields itself and stuns its target for two seconds.', mana: 90, power: 200, kind: 'stun', stunSeconds: 2, selfShield: 300 } },
+  { id: 'warlord', name: 'Warlord', cost: 4, traits: ['Warrior', 'Guardian'], hp: 1000, attack: 80, attackSpeed: 0.75, armor: 50, range: 1, magic: false,
+    ability: { name: 'War Cry', description: 'Shields itself and stuns its target for one and a half seconds.', mana: 90, power: 200, kind: 'stun', stunSeconds: 1.5, selfShield: 300 } },
   { id: 'phantom', name: 'Phantom', cost: 4, traits: ['Assassin', 'Frost'], hp: 750, attack: 100, attackSpeed: 0.9, armor: 25, range: 1, magic: false,
-    ability: { name: 'Death Mark', description: 'Executes the target for huge physical damage.', mana: 60, power: 450, kind: 'nuke', physical: true } },
+    ability: { name: 'Death Mark', description: 'Executes the target for huge physical damage.', mana: 75, power: 330, kind: 'nuke', physical: true } },
   { id: 'archmage', name: 'Archmage', cost: 5, traits: ['Mage', 'Storm'], hp: 900, attack: 60, attackSpeed: 0.7, armor: 30, range: 4, magic: true,
     ability: { name: 'Meteor Storm', description: 'Rains meteors on all enemies.', mana: 100, power: 350, kind: 'aoe' } },
   { id: 'dragon', name: 'Fire Dragon', cost: 5, traits: ['Warrior', 'Fire'], hp: 1500, attack: 110, attackSpeed: 0.75, armor: 50, range: 2, magic: true,
@@ -113,3 +113,18 @@ export const TRAITS: TraitDef[] = [
 ];
 
 export const STAR_MULT = [0, 1, 1.8, 3.2];
+
+/** AI opponent difficulty. Raise these numbers to make opponents stronger. */
+export const AI = {
+  levelPerRound: 0.37, // AI level = 1 + round * this
+  costTierEvery: 4.5,
+  /** AI only uses cost tiers with at least this % shop odds at its level */
+  minShopOdds: 15, // AI unlocks a new cost tier every N rounds
+  twoStarPerRound: 0.025,
+  twoStarMax: 0.55,
+  threeStarFromRound: 20,
+  threeStarPerRound: 0.03,
+  /** damage when AI opponents fight each other */
+  fightDamageBase: 3,
+  fightDamagePerRound: 0.7,
+};

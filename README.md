@@ -8,6 +8,8 @@ A single-player, hands-free auto-battler for iPhone, controlled by voice. It's b
 3. Allow the microphone and speech recognition prompts.
 4. Say "help" to hear the commands.
 
+Just say a slot number ("four") to buy it. Say "what should I do" for coaching, "undo" if a purchase was misheard.
+
 Example commands: "what's in the shop", "buy slot two", "refresh", "buy experience", "level up",
 "place my mage in B2", "move my warrior to A3", "bench my squire", "sell my squire",
 "tell me about my team", "scout opponent", "how much gold", "status", "fight", "repeat", "quiet",
@@ -21,6 +23,7 @@ npm install
 npm run dev     # local dev server
 npm test        # unit tests (command parser, game rules)
 npm run build   # production build into dist/
+npm run balance # simulates 60 games: match length and win rate per round
 ```
 
 ## Code layout
