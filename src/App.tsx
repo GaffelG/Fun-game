@@ -290,7 +290,7 @@ export default function App() {
         </div>
         <div className="voice-settings">
           <label>Voice
-            <select value={speaker.voiceName} onChange={(e) => { speaker.setVoice(e.target.value); rerender(); speaker.say(`Hi, I'm ${e.target.value}. You bought Ember Mage.`, 'high'); }}>
+            <select value={speaker.voiceName} onChange={(e) => { speaker.setVoice(e.target.value); rerender(); speaker.say(`Hi, I'm ${e.target.value}. You bought Ninja.`, 'high'); }}>
               {speaker.voices.map((v) => <option key={v.name + v.lang} value={v.name}>{v.name} ({v.lang})</option>)}
             </select>
           </label>

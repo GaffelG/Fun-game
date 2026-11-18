@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseCommand } from '../voice/commands';
 import { Game } from '../game/engine';
+import { UNITS } from '../game/config';
 
 describe('parseCommand', () => {
   const cases: [string, unknown][] = [
@@ -11,13 +12,13 @@ describe('parseCommand', () => {
     ['Level up.', { type: 'levelUp' }],
     ['Place my Mage in B2.', { type: 'place', name: 'mage', row: 1, col: 1 }],
     ['Move my Warrior to A3.', { type: 'place', name: 'warrior', row: 0, col: 2 }],
-    ['move my squire to bee four', { type: 'place', name: 'Squire', row: 1, col: 3 }],
+    ['move my knight to bee four', { type: 'place', name: 'Knight', row: 1, col: 3 }],
     ['Scout opponent.', { type: 'scout' }],
     ['Tell me about my team.', { type: 'team' }],
     ['How much gold do I have?', { type: 'gold' }],
     ['refresh the shop', { type: 'refresh' }],
     ['tell me about slot three', { type: 'slotInfo', slot: 3 }],
-    ['what does ember mage do', { type: 'unitInfo', name: 'Ember Mage' }],
+    ['what does the ninja do', { type: 'unitInfo', name: 'Ninja' }],
   ];
   for (const [input, expected] of cases) it(input, () => expect(parseCommand(input)).toEqual(expected));
 });
@@ -26,7 +27,7 @@ describe('Game', () => {
   it('combines three copies into two stars', () => {
     const g = new Game();
     g.gold = 100;
-    g.shop = ['squire', 'squire', 'squire', null, null];
+    g.shop = ['knight', 'knight', 'knight', null, null];
     const msgs = [...g.buy(1), ...g.buy(2), ...g.buy(3)].map((m) => m.text);
     expect(msgs.some((m) => m.includes('upgraded to two stars'))).toBe(true);
     const all = [...g.board, ...g.bench].filter(Boolean);
@@ -66,7 +67,7 @@ import { simulateBattle } from '../game/battle';
 describe('abilities', () => {
   it('Warlord shields itself when casting', () => {
     // Warlord alone vs a sturdy dummy; it must survive longer thanks to shields. Just ensure no crash and a result.
-    const r = simulateBattle([{ uid: 1, defId: 'warlord', stars: 1, row: 0, col: 1 }], [{ uid: 2, defId: 'squire', stars: 1, row: 0, col: 1 }]);
+    const r = simulateBattle([{ uid: 1, defId: 'general', stars: 1, row: 0, col: 1 }], [{ uid: 2, defId: 'knight', stars: 1, row: 0, col: 1 }]);
     expect(r.winner).toBe(0);
   });
 });
@@ -86,7 +87,7 @@ describe('new commands', () => {
     ['fill the board', { type: 'fillBoard' }],
     ['how much XP do I have', { type: 'xpInfo' }],
     ['standings', { type: 'standings' }],
-    ['buy all squires', { type: 'buyAll', name: 'Squire' }],
+    ['buy all knights', { type: 'buyAll', name: 'Knight' }],
     ['next voice', { type: 'voice', change: 'next' }],
     ['speak slower', { type: 'voice', change: 'slower' }],
     ['how much time left', { type: 'timeLeft' }],
@@ -104,20 +105,20 @@ describe('smart features', () => {
   });
   it('undo refunds a purchase', () => {
     const g = new Game();
-    g.shop = ['squire', 'ember', 'scout', 'stonewall', 'pyro'];
+    g.shop = ['knight', 'spark', 'archer', 'rock', 'ninja'];
     const before = g.gold;
     g.buy(1);
     expect(g.undo().text).toContain('Undone');
     expect(g.gold).toBe(before);
-    expect(g.shop[0]).toBe('squire');
+    expect(g.shop[0]).toBe('knight');
     expect(g.board.length).toBe(0);
   });
   it('shop hints upgrades and advice suggests it', () => {
     const g = new Game();
     g.gold = 20;
-    g.shop = ['squire', 'squire', 'ember', null, null];
+    g.shop = ['knight', 'knight', 'spark', null, null];
     g.buy(1); g.buy(2);
-    g.shop = ['ember', 'squire', null, null, null];
+    g.shop = ['spark', 'knight', null, null, null];
     expect(g.describeShop().text).toContain('Upgrades your unit');
     expect(g.advice().text).toContain('slot two');
   });
@@ -128,5 +129,22 @@ describe('smart features', () => {
     g.setLock(true);
     g.startBattle(); g.finishBattle();
     if (g.phase === 'prep') expect(g.shop).toEqual(shop);
+  });
+});
+
+describe('unit names', () => {
+  it('are unique single words and not command words', () => {
+    const banned = ['scout', 'gold', 'level', 'shop', 'buy', 'sell', 'fight', 'team', 'bench', 'help', 'quiet', 'undo', 'lock'];
+    const names = UNITS.map((u) => u.name.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
+    for (const n of names) { expect(n).not.toContain(' '); expect(banned).not.toContain(n); }
+  });
+  it('hears common mishearings', () => {
+    expect(parseCommand('sell my night')).toEqual({ type: 'sell', name: 'Knight' });
+    expect(parseCommand('move the yetti to c1')).toEqual({ type: 'place', name: 'Yeti', row: 2, col: 0 });
+    expect(parseCommand('tell me about phoenix')).toEqual({ type: 'unitInfo', name: 'Phoenix' });
+  });
+  it('does not match names inside other words', () => {
+    expect(parseCommand('place my mage in b2')).toEqual({ type: 'place', name: 'mage', row: 1, col: 1 });
   });
 });

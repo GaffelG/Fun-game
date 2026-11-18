@@ -249,7 +249,7 @@ export class Game {
     return null;
   }
 
-  /** Find a unit by name or trait, e.g. "mage" or "ember mage". Prefers bench units when `preferBench`. */
+  /** Find a unit by name or trait, e.g. "mage" or "ninja". Prefers bench units when `preferBench`. */
   findOwned(query: string, preferBench = false): OwnedUnit | null {
     const q = query.toLowerCase().trim();
     const all: OwnedUnit[] = preferBench

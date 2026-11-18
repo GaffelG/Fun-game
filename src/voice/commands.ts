@@ -1,5 +1,5 @@
 // Turns recognized speech into game commands. Tolerant of common mishearings.
-import { UNITS } from '../game/config';
+import { NAME_ALIASES, UNITS } from '../game/config';
 
 export type Command =
   | { type: 'shop' }
@@ -77,15 +77,15 @@ function findSlot(t: string): number | null {
   return null;
 }
 
-const GENERIC = ['mage', 'guard', 'archer', 'scout', 'knife', 'frost', 'fire', 'storm', 'shadow'];
-/** Match a unit name or trait mentioned in text. */
+/** Match a unit name or trait mentioned in text (whole words only, with common mishearings). */
 function findUnitName(t: string): string | null {
-  const byName = [...UNITS].sort((a, b) => b.name.length - a.name.length).find((u) => t.includes(u.name.toLowerCase()));
-  if (byName) return byName.name;
-  // partial first word, e.g. "ember", "phantom", "dragon"
-  for (const u of UNITS) for (const w of u.name.toLowerCase().split(' ')) if (w.length > 3 && !GENERIC.includes(w) && new RegExp(`\\b${w}\\b`).test(t)) return u.name;
-  const trait = t.match(/\b(warrior|mage|ranger|guardian|assassin|archer|tank)s?\b/);
-  if (trait) return trait[1] === 'archer' ? 'ranger' : trait[1] === 'tank' ? 'guardian' : trait[1];
+  for (const w of t.split(' ')) {
+    const id = NAME_ALIASES[w] ?? w;
+    const u = UNITS.find((x) => x.id === id);
+    if (u) return u.name;
+  }
+  const trait = t.match(/\b(warrior|mage|ranger|guardian|assassin|tank)s?\b/);
+  if (trait) return trait[1] === 'tank' ? 'guardian' : trait[1];
   return null;
 }
 
@@ -176,11 +176,11 @@ export function parseCommand(raw: string): Command | null {
 
 export const HELP_TEXT =
   'You can say: what is in the shop, buy slot two, refresh, buy experience, level up, ' +
-  'place my mage in B2, move my warrior to A3, bench my squire, sell my squire, tell me about my team, ' +
+  'place my mage in B2, move my warrior to A3, bench my knight, sell my knight, tell me about my team, ' +
   'scout opponent, how much gold, status, fight, what happened last battle, repeat, or quiet. ' +
   'To buy, you can also just say the slot number, like four. Say undo if I misheard a purchase. ' +
   'Ask what should I do for advice. Lock shop keeps the shop for next round. ' +
   'More questions: how many units can I have, what is on my bench, my synergies, what can I afford, what can I upgrade, how much XP, standings, time left. ' +
-  'Fill board puts bench units on empty spots. Buy all squires buys every copy in the shop. ' +
+  'Fill board puts bench units on empty spots. Buy all knights buys every copy in the shop. ' +
   'Voice: next voice, faster, slower. ' +
   'Settings: minimal, balanced or detailed announcements, start timer, stop timer, and new game.';
