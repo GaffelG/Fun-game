@@ -168,7 +168,8 @@ const ACCENT: Record<string, string> = { 'en-US': 'American', 'en-GB': 'British'
 function buildOptions(voices: SpeechSynthesisVoice[]): VoiceOption[] {
   const en = voices.filter((v) => v.lang.replace('_', '-').toLowerCase().startsWith('en'));
   const score = (v: SpeechSynthesisVoice) => {
-    const n = v.name.toLowerCase();
+    // iPhone puts the quality in the voice ID, e.g. com.apple.voice.premium.en-GB.Jamie
+    const n = `${v.name} ${v.voiceURI}`.toLowerCase();
     let s = 0;
     if (n.includes('premium')) s += 6;
     if (n.includes('enhanced')) s += 5;
@@ -184,7 +185,9 @@ function buildOptions(voices: SpeechSynthesisVoice[]): VoiceOption[] {
       const fun = NOVELTY.some((k) => v.name.toLowerCase().includes(k));
       const lang = v.lang.replace('_', '-');
       const accent = ACCENT[lang] ?? lang;
-      return { id: v.voiceURI || `${v.name}|${v.lang}`, label: `${v.name} (${accent}${fun ? ', fun' : ''})`, voice: v, fun, s: score(v) };
+      const uri = (v.voiceURI || '').toLowerCase();
+      const quality = /premium/.test(uri) && !/premium/i.test(v.name) ? ', Premium' : /enhanced/.test(uri) && !/enhanced/i.test(v.name) ? ', Enhanced' : '';
+      return { id: v.voiceURI || `${v.name}|${v.lang}`, label: `${v.name} (${accent}${quality}${fun ? ', fun' : ''})`, voice: v, fun, s: score(v) };
     })
     .filter((o) => (seen.has(o.id) ? false : (seen.add(o.id), true)))
     .sort((a, b) => Number(a.fun) - Number(b.fun) || b.s - a.s || a.label.localeCompare(b.label))
