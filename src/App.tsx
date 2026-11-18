@@ -19,6 +19,7 @@ export default function App() {
   const [timerOn, setTimerOn] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(PREP_SECONDS);
   const [typed, setTyped] = useState('');
+  const [showAllVoices, setShowAllVoices] = useState(false);
   const [wakeLock, setWakeLock] = useState<'on' | 'off' | 'unsupported'>('off');
   const timerOnRef = useRef(false);
   const verbosityRef = useRef(verbosity);
@@ -312,17 +313,21 @@ export default function App() {
         </div>
         <div className="voice-settings">
           {speaker.voices.length === 0 && <p className="hint warn">No voices loaded yet. Tap Start voice game, wait a few seconds, or reload the page.</p>}
-          {(['main', 'battle'] as const).map((role) => (
+          {(['main', 'battle'] as const).map((role) => {
+            // Show only good voices unless "show all" is on; always include the one currently chosen.
+            const list = showAllVoices ? speaker.voices : speaker.shortlist;
+            const options = list.some((v) => v.id === speaker.voiceId(role)) ? list : [...speaker.voices.filter((v) => v.id === speaker.voiceId(role)), ...list];
+            return (
             <label key={role}>{role === 'main' ? 'Announcer voice' : 'Battle commentary voice'}
               <div className="voice-row">
                 <select value={speaker.voiceId(role)} onChange={(e) => { speaker.setVoice(e.target.value, role); speaker.unlock(); speaker.preview(role); }}>
-                  {speaker.voices.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+                  {options.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
                 </select>
                 <button type="button" onClick={() => { speaker.unlock(); speaker.preview(role); }}>Test</button>
               </div>
             </label>
-          ))}
-          <p className="hint">{speaker.voices.length} English voices found on this phone. Voices marked "fun" are novelty voices.</p>
+          ); })}
+          <label className="check"><input type="checkbox" checked={showAllVoices} onChange={(e) => setShowAllVoices(e.target.checked)} /> Show all {speaker.voices.length} voices</label>
           <label>Speed {speaker.rate.toFixed(2)}
             <input type="range" min={0.7} max={1.6} step={0.05} value={speaker.rate} onChange={(e) => { speaker.setRate(Number(e.target.value)); rerender(); }} />
           </label>
