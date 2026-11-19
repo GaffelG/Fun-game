@@ -47,3 +47,4 @@ button.small { padding: 4px 10px; font-size: 13px; }
 .voice-row select { flex: 1; min-width: 0; }
 .hint.warn { color: #f0c674; }
 .voice-settings label.check { flex-direction: row; align-items: center; gap: 8px; }
+.voice-name { flex: 1; align-self: center; }
