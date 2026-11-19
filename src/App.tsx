@@ -309,7 +309,8 @@ export default function App() {
             <span className="voice-name">Voice: <b>{speaker.voiceLabel('main')}</b></span>
             <button type="button" onClick={() => { speaker.unlock(); speaker.preview('main'); }}>Test</button>
           </div>
-          {speaker.voices.length > 0 && !/jamie/i.test(speaker.voiceLabel('main')) && (
+          {speaker.cloud === 'error' && <p className="hint warn">The online voice stopped working ({speaker.cloudError}). Using the phone's voice instead. Reload the page to try again.</p>}
+          {speaker.cloud === 'off' && speaker.voices.length > 0 && !/jamie/i.test(speaker.voiceLabel('main')) && (
             <p className="hint warn">Safari can't use Jamie on this phone (Apple only lets apps, not websites, use Premium voices), so the game uses the best British voice instead. Try downloading <b>Jamie Enhanced</b> as well: Settings → Accessibility → Spoken Content → Voices → English → Jamie → Enhanced. Then close and reopen this page.</p>
           )}
           <details className="hint">

@@ -15,6 +15,19 @@ const RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 };
 const NOVELTY = ['bells', 'bubbles', 'whisper', 'zarvox', 'trinoids', 'bad news', 'good news', 'jester', 'organ', 'cellos', 'boing', 'albert', 'fred', 'hysterical', 'superstar', 'wobble', 'junior', 'kathy', 'ralph', 'grandma', 'grandpa', 'rocko', 'shelley', 'eddy', 'flo', 'reed', 'sandy'];
 
 /** quality: 2 = Premium, 1 = Enhanced, 0 = basic */
+/** Online voice (Google Cloud TTS through /api/tts). */
+export type CloudState = 'checking' | 'on' | 'off' | 'error';
+
+/** A tiny silent WAV, played inside the Start tap so iOS lets this audio element play later. */
+function silentWav(): string {
+  const samples = 800, buf = new ArrayBuffer(44 + samples * 2), v = new DataView(buf);
+  const w = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + samples * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true);
+  v.setUint32(28, 16000, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, samples * 2, true);
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+
 export interface VoiceOption { id: string; label: string; voice: SpeechSynthesisVoice; fun: boolean; quality: number }
 
 class Speaker {
@@ -30,10 +43,17 @@ class Speaker {
   /** English voices: best-sounding first, fun/novelty voices last */
   voices: VoiceOption[] = [];
   lastSpoken = '';
+  cloud: CloudState = 'checking';
+  cloudError = '';
+  private cloudFailures = 0;
+  private audio: HTMLAudioElement | null = null;
+  /** text -> pending/finished audio URL (null = failed). Repeated phrases play instantly. */
+  private cache = new Map<string, Promise<string | null>>();
   readonly supported = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
   constructor() {
     if (!this.supported) return;
+    this.checkCloud();
     this.loadVoices();
     speechSynthesis.addEventListener?.('voiceschanged', () => this.loadVoices());
     // Poll: iOS often fills the list a few seconds late without an event.
@@ -66,10 +86,57 @@ class Speaker {
     return good.length ? good : this.voices.filter((v) => !v.fun).slice(0, 5);
   }
 
+  private async checkCloud() {
+    try {
+      const r = await fetch('/api/tts');
+      const data = r.ok ? await r.json() : null;
+      this.cloud = data?.enabled ? 'on' : 'off';
+    } catch { this.cloud = 'off'; }
+    this.voiceListeners.forEach((l) => l());
+  }
+
+  private cacheKey(text: string) { return `${this.rate}|${text}`; }
+
+  /** Start fetching audio for a phrase (called as soon as it is queued, to hide the delay). */
+  private fetchAudio(text: string): Promise<string | null> {
+    const key = this.cacheKey(text);
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const p = (async () => {
+      try {
+        const r = await fetch('/api/tts', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, rate: this.rate }) });
+        const data = await r.json();
+        if (!r.ok || !data.audio) throw new Error(data.error || `HTTP ${r.status}`);
+        this.cloudFailures = 0;
+        const bytes = Uint8Array.from(atob(data.audio), (c) => c.charCodeAt(0));
+        return URL.createObjectURL(new Blob([bytes], { type: 'audio/mpeg' }));
+      } catch (e) {
+        this.cache.delete(key);
+        // After 3 failures in a row, stop trying and use the phone's voice so the game keeps talking.
+        if (++this.cloudFailures >= 3) {
+          this.cloud = 'error';
+          this.cloudError = (e as Error).message;
+          this.voiceListeners.forEach((l) => l());
+        }
+        return null;
+      }
+    })();
+    this.cache.set(key, p);
+    if (this.cache.size > 300) {
+      const oldest = this.cache.keys().next().value as string;
+      this.cache.get(oldest)?.then((u) => u && URL.revokeObjectURL(u));
+      this.cache.delete(oldest);
+    }
+    return p;
+  }
+
   onVoicesChanged(l: () => void) { this.voiceListeners.push(l); return () => { this.voiceListeners = this.voiceListeners.filter((x) => x !== l); }; }
 
   voiceId(role: Role = 'main') { return this.chosen[role]?.id ?? ''; }
-  voiceLabel(role: Role = 'main') { return this.chosen[role]?.label ?? 'iPhone default voice'; }
+  voiceLabel(role: Role = 'main') {
+    if (this.cloud === 'on') return 'Google British voice (online)';
+    return this.chosen[role]?.label ?? 'iPhone default voice';
+  }
   /** Kept for older callers */
   get voiceName() { return this.voiceLabel('main'); }
 
@@ -106,6 +173,13 @@ class Speaker {
     u.volume = 0;
     speechSynthesis.speak(u);
     this.loadVoices();
+    // Unlock the audio element for the online voice (iOS only allows playback that started from a tap).
+    if (!this.audio) {
+      this.audio = new Audio();
+      this.audio.setAttribute('playsinline', '');
+      this.audio.src = silentWav();
+      this.audio.play().catch(() => { /* fine: unlocking is best effort */ });
+    }
   }
 
   say(text: string, priority: Priority = 'normal', role: Role = 'main') {
@@ -115,6 +189,7 @@ class Speaker {
     if (priority === 'normal') this.queue = this.queue.filter((q) => q.priority !== 'low');
     const idx = this.queue.findIndex((q) => RANK[q.priority] > RANK[priority]);
     const item = { text, priority, role };
+    if (this.cloud === 'on') void this.fetchAudio(text);
     if (idx < 0) this.queue.push(item);
     else this.queue.splice(idx, 0, item);
     this.next();
@@ -131,6 +206,7 @@ class Speaker {
     this.queue = [];
     this.current++; // invalidate callbacks of the cancelled utterance
     if (this.supported) speechSynthesis.cancel();
+    this.audio?.pause();
     this.finish();
   }
 
@@ -147,13 +223,6 @@ class Speaker {
     this.speaking = true;
     this.lastSpoken = item.text;
     this.emit();
-    const u = new SpeechSynthesisUtterance(item.text);
-    const opt = this.chosen[item.role] ?? this.chosen.main;
-    // iOS ignores the voice unless lang matches it, so set both.
-    u.lang = 'en-US';
-    // If the browser rejects the voice for any reason, keep talking with the default voice.
-    if (opt) { try { u.voice = opt.voice; u.lang = opt.voice.lang; } catch { /* default voice */ } }
-    u.rate = this.rate;
     const id = ++this.current;
     const done = () => {
       if (id !== this.current) return; // stale or repeated callback
@@ -161,10 +230,41 @@ class Speaker {
       this.finish();
       window.setTimeout(() => this.next(), 150);
     };
+    // iOS sometimes never reports the end of speech. Watchdog based on text length (+ time to download).
+    this.watchdog = window.setTimeout(done, 6000 + item.text.length * 90);
+    if (this.cloud === 'on' && this.audio) {
+      void this.fetchAudio(item.text).then((url) => {
+        if (id !== this.current) return; // stopped meanwhile
+        // Fall back to the phone's voice at most once, and only if the online audio never started.
+        let started = false, fellBack = false;
+        const fallback = () => {
+          if (id !== this.current || fellBack) return;
+          fellBack = true;
+          if (started) done(); else this.speakLocal(item, done);
+        };
+        if (!url || !this.audio) { fallback(); return; }
+        this.audio.onplaying = () => { started = true; };
+        this.audio.onended = done;
+        this.audio.onerror = fallback;
+        this.audio.src = url;
+        this.audio.play().then(() => { started = true; }, fallback);
+      });
+      return;
+    }
+    this.speakLocal(item, done);
+  }
+
+  /** Speak with the phone's own voice (fallback, and when no online voice is set up). */
+  private speakLocal(item: Item, done: () => void) {
+    const u = new SpeechSynthesisUtterance(item.text);
+    const opt = this.chosen[item.role] ?? this.chosen.main;
+    // iOS ignores the voice unless lang matches it, so set both.
+    u.lang = 'en-US';
+    // If the browser rejects the voice for any reason, keep talking with the default voice.
+    if (opt) { try { u.voice = opt.voice; u.lang = opt.voice.lang; } catch { /* default voice */ } }
+    u.rate = this.rate;
     u.onend = done;
     u.onerror = done;
-    // iOS sometimes never fires onend. Watchdog based on text length.
-    this.watchdog = window.setTimeout(done, 3000 + item.text.length * 90);
     speechSynthesis.speak(u);
   }
 }
