@@ -44,3 +44,16 @@ Import this GitHub repo at vercel.com/new. Vercel detects Vite automatically: th
 - The screen must stay on. The app requests a Wake Lock (iOS 16.4+) so the screen doesn't lock on its own.
 - The mic pauses while the game speaks, so it doesn't hear itself.
 - Speech recognition on iOS uses Apple's servers and needs internet.
+
+## Online voice (optional)
+The iPhone's own voices sound robotic, and Safari can't use Premium voices like Jamie.
+For a natural British voice, the game can use Google Cloud Text-to-Speech through `api/tts.ts`
+(a Vercel function, so the key is never in the game code).
+
+1. Google Cloud: create a project, enable billing, enable **Cloud Text-to-Speech API**, create an **API key**
+   (restrict it to the Text-to-Speech API).
+2. Vercel → project → Settings → Environment Variables: `GOOGLE_TTS_API_KEY` = your key. Redeploy.
+3. Optional: `GOOGLE_TTS_VOICE` to change the voice (default `en-GB-Neural2-B`, male; `en-GB-Neural2-A`/`C`/`F` are female).
+
+The first 1 million characters each month are free (a 20-minute game uses about 15,000).
+If the key is missing or the service fails, the game falls back to the phone's voice.
