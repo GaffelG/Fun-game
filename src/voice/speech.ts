@@ -50,8 +50,12 @@ class Speaker {
     this.voices = list;
     // The game always speaks with one voice: Jamie (the player's chosen voice).
     // Prefer the Premium version, then Enhanced, then any Jamie; otherwise the best voice available.
-    const jamies = list.filter((v) => /jamie/i.test(v.voice.name)).sort((a, b) => b.quality - a.quality);
-    const voice = jamies[0] ?? list[0] ?? null;
+    // Safari on iPhone usually can't use Premium voices, so if Jamie isn't offered,
+    // fall back to the best British voice, then the best voice overall.
+    const best = (l: VoiceOption[]) => [...l].sort((a, b) => b.quality - a.quality)[0];
+    const voice = best(list.filter((v) => /jamie/i.test(v.voice.name)))
+      ?? best(list.filter((v) => !v.fun && /en[-_]gb/i.test(v.voice.lang)))
+      ?? list[0] ?? null;
     this.chosen = { main: voice, battle: voice };
     this.voiceListeners.forEach((l) => l());
   }

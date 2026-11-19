@@ -310,8 +310,12 @@ export default function App() {
             <button type="button" onClick={() => { speaker.unlock(); speaker.preview('main'); }}>Test</button>
           </div>
           {speaker.voices.length > 0 && !/jamie/i.test(speaker.voiceLabel('main')) && (
-            <p className="hint warn">Jamie was not found on this phone. Download it in Settings → Accessibility → Spoken Content → Voices → English → Jamie, then close and reopen this page.</p>
+            <p className="hint warn">Safari can't use Jamie on this phone (Apple only lets apps, not websites, use Premium voices), so the game uses the best British voice instead. Try downloading <b>Jamie Enhanced</b> as well: Settings → Accessibility → Spoken Content → Voices → English → Jamie → Enhanced. Then close and reopen this page.</p>
           )}
+          <details className="hint">
+            <summary>Voices Safari lets the game use ({speaker.voices.length})</summary>
+            {speaker.voices.map((v) => v.label).join(', ') || 'None yet. Tap Start voice game and wait a few seconds.'}
+          </details>
           <label>Speed {speaker.rate.toFixed(2)}
             <input type="range" min={0.7} max={1.6} step={0.05} value={speaker.rate} onChange={(e) => { speaker.setRate(Number(e.target.value)); rerender(); }} />
           </label>
