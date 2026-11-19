@@ -48,14 +48,11 @@ class Speaker {
     const list = buildOptions(speechSynthesis.getVoices());
     if (list.length === this.voices.length && list.every((v, i) => v.id === this.voices[i].id)) return;
     this.voices = list;
-    for (const role of ['main', 'battle'] as Role[]) {
-      const saved = store(`ttsVoice2_${role}`);
-      this.chosen[role] = list.find((v) => v.id === saved) ?? null;
-    }
-    // Defaults: best voice for the announcer, a different good voice for battle commentary.
-    if (!this.chosen.main) this.chosen.main = list[0] ?? null;
-    // Battle commentary uses the same voice as the announcer unless the player picks another.
-    if (!this.chosen.battle) this.chosen.battle = this.chosen.main;
+    // The game always speaks with one voice: Jamie (the player's chosen voice).
+    // Prefer the Premium version, then Enhanced, then any Jamie; otherwise the best voice available.
+    const jamies = list.filter((v) => /jamie/i.test(v.voice.name)).sort((a, b) => b.quality - a.quality);
+    const voice = jamies[0] ?? list[0] ?? null;
+    this.chosen = { main: voice, battle: voice };
     this.voiceListeners.forEach((l) => l());
   }
 

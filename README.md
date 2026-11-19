@@ -13,7 +13,7 @@ Just say a slot number ("four") to buy it. Say "what should I do" for coaching, 
 Example commands: "what's in the shop", "buy slot two", "refresh", "buy experience", "level up",
 "ninja A3" (or "place ninja on A3"), "knight front", "move my archer to the back", "bench my squire", "sell my squire",
 "tell me about my team", "scout opponent", "how much gold", "status", "fight", "repeat", "quiet",
-"next voice", "next battle voice", "minimal / balanced / detailed", "start timer", "new game".
+"faster", "slower", "minimal / balanced / detailed", "start timer", "new game".
 
 The board has rows A (front), B and C (back), and columns 1 to 4.
 

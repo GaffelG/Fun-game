@@ -256,5 +256,5 @@ export const HELP_TEXT =
   'Ask what should I do for advice. Lock shop keeps the shop for next round. ' +
   'More questions: how many units can I have, what is on my bench, my synergies, what can I afford, what can I upgrade, how much XP, standings, time left. ' +
   'Fill board puts bench units on empty spots. Buy all knights buys every copy in the shop. ' +
-  'Voice: next voice, next battle voice, faster, slower. ' +
+  'Voice: faster, slower. ' +
   'Settings: minimal, balanced or detailed announcements, start timer, stop timer, and new game.';
